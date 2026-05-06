@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-meeting-intelligence-platform"
+version = "0.1.0"
+description = "AWS-native AI Meeting Intelligence Platform"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.2.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = [
+  "services",
+  "apps/api/tests",
+]
+addopts = [
+  "--import-mode=importlib",
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = [
+  "apps/api/src",
+  "services/ingestion-service/src",
+  "services/media-service/src",
+  "services/transcription-service/src",
+  "services/ai-enrichment-service/src",
+  "services/task-orchestrator-service/src",
+  "services/integration-service/src",
+  "services/notification-service/src",
+  "services/status-observer-service/src",
+  "services/search-query-service/src",
+  "services/chat-rag-service/src",
+  "libs/contracts/src",
+  "libs/shared/src",
+  "libs/observability/src",
+  "libs/connectors/src",
+]

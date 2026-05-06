@@ -1,0 +1,2 @@
+"""Search query service package."""
+
