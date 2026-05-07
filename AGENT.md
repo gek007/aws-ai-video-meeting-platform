@@ -34,7 +34,7 @@ Still planned:
 - real `Amazon Bedrock`
 - real `OpenSearch` indexing
 - real scheduled AWS infrastructure
-- real async Transcribe completion callback handler
+- real Transcribe completion event handling
 
 ## Core Product Capabilities
 
@@ -80,7 +80,7 @@ The platform uses a hybrid `SNS + SQS + Lambda` event-driven model.
 3. Ingestion persists `meeting`, `video_item`, and `processing_job` records in `Aurora`.
 4. Ingestion sends the job to `SQS: media-processing`.
 5. Media processing prepares normalized audio metadata, persists the audio artifact reference, and sends the next message to `SQS: transcription`.
-6. The transcription stage submits audio to `Amazon Transcribe` or local in-memory transcription. Only ready transcript artifacts are persisted and sent to `SQS: ai-enrichment`; real Transcribe submissions currently return `transcription.job.started`.
+6. The transcription stage submits audio to `Amazon Transcribe` or local in-memory transcription. Real Transcribe submissions return `transcription.job.started`; completed Transcribe events persist the ready transcript and send `meeting.transcript.ready` to `SQS: ai-enrichment`.
 7. AI enrichment persists summaries, topics, decisions, action items, and transcript chunks.
 8. Enrichment publishes `meeting.intelligence.generated` to `SNS`.
 9. `SNS` fans out to `SQS` consumers such as task creation and notifications.
@@ -93,9 +93,9 @@ The platform uses a hybrid `SNS + SQS + Lambda` event-driven model.
 
 The current code intentionally preserves a simplified downstream contract:
 
-- `transcription-service` starts `Amazon Transcribe` and returns `transcription.job.started`; the callback handler that emits `meeting.transcript.ready` is still pending.
+- `transcription-service` starts `Amazon Transcribe`, returns `transcription.job.started`, and handles completed Transcribe events by emitting `meeting.transcript.ready`.
 
-That keeps the rest of the repo consistent while the true callback-based completion flow is still pending.
+The remaining work around Transcribe is retry, alerting, and production EventBridge wiring for failed or delayed jobs.
 
 ## Canonical Eventing Pattern
 

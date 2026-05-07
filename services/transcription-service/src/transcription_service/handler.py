@@ -6,12 +6,19 @@ from transcription_service.publisher import InMemoryQueuePublisher, SQSQueuePubl
 from transcription_service.store import AuroraTranscriptionStore, InMemoryMetadataStore
 from transcription_service.transcriber import AmazonTranscribeClient, InMemoryTranscriber
 from shared.responses import json_response
-from transcription_service.service import TranscriptionService
+from transcription_service.service import TranscriptionCompletionService, TranscriptionService
 
 
 def lambda_handler(event: dict, _context) -> dict:
     publisher = _build_publisher()
     metadata_store = _build_metadata_store()
+    if _is_completion_event(event):
+        result = TranscriptionCompletionService(
+            publisher=publisher,
+            metadata_store=metadata_store,
+        ).complete(event)
+        return json_response(202, {"message": "Transcription completion processed.", "nextEvent": result.next_event})
+
     transcriber = _build_transcriber()
     result = TranscriptionService(
         publisher=publisher,
@@ -37,3 +44,8 @@ def _build_transcriber():
     if os.getenv("TRANSCRIBE_OUTPUT_BUCKET"):
         return AmazonTranscribeClient()
     return InMemoryTranscriber()
+
+
+def _is_completion_event(event: dict) -> bool:
+    detail = event.get("detail", {})
+    return "transcriptionJobStatus" in event or "TranscriptionJobStatus" in detail

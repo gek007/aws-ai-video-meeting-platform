@@ -47,11 +47,11 @@ Current code behavior:
 - starts an `Amazon Transcribe` job when `TRANSCRIBE_OUTPUT_BUCKET` is configured
 - returns `transcription.job.started` for real Transcribe submissions
 - persists transcript reference data in `Aurora` only when the transcript artifact is ready
-- publishes `meeting.transcript.ready` to `SQS: ai-enrichment` only for ready transcript artifacts
+- handles completed Transcribe events and publishes `meeting.transcript.ready` to `SQS: ai-enrichment`
 
 Current limitation:
 
-- the async completion callback handler that emits `meeting.transcript.ready` for completed Transcribe jobs is still pending
+- failed Transcribe jobs currently return `transcription.job.failed`, but richer retry and alerting behavior is still pending
 
 ### 6. AI enrichment runs
 

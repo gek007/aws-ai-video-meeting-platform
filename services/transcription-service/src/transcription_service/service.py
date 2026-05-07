@@ -123,3 +123,85 @@ class TranscriptionService:
         )
         self._publisher.publish_ai_enrichment(next_event)
         return TranscriptionResult(next_event=next_event)
+
+
+class TranscriptionCompletionService:
+    def __init__(self, publisher: QueuePublisher, metadata_store: MetadataStore) -> None:
+        self._publisher = publisher
+        self._metadata_store = metadata_store
+
+    def complete(self, event: dict) -> TranscriptionResult:
+        detail = event.get("detail", {})
+        status = event.get("transcriptionJobStatus") or detail.get("TranscriptionJobStatus")
+        job_name = event.get("transcriptionJobName") or detail.get("TranscriptionJobName")
+        if not job_name:
+            raise ValueError("transcriptionJobName or detail.TranscriptionJobName is required.")
+
+        ids = self._resolve_ids(event, job_name)
+        if status != "COMPLETED":
+            next_event = base_event(
+                "transcription.job.failed",
+                tenant_id=ids["tenantId"],
+                meeting_id=ids["meetingId"],
+                video_item_id=ids["videoItemId"],
+                correlation_id=ids["correlationId"],
+            )
+            next_event["transcriptionProvider"] = event.get("transcriptionProvider", "amazon-transcribe")
+            next_event["transcriptionJobName"] = job_name
+            next_event["status"] = status or "UNKNOWN"
+            return TranscriptionResult(next_event=next_event)
+
+        transcript = self._resolve_transcript(event, ids)
+        next_event = base_event(
+            "meeting.transcript.ready",
+            tenant_id=ids["tenantId"],
+            meeting_id=ids["meetingId"],
+            video_item_id=ids["videoItemId"],
+            correlation_id=ids["correlationId"],
+        )
+        next_event["transcript"] = transcript
+        next_event["transcriptionProvider"] = event.get("transcriptionProvider", "amazon-transcribe")
+        next_event["transcriptionJobName"] = job_name
+        self._metadata_store.record_transcript(
+            tenant_id=ids["tenantId"],
+            meeting_id=ids["meetingId"],
+            video_item_id=ids["videoItemId"],
+            transcript_bucket=transcript["bucket"],
+            transcript_key=transcript["key"],
+            language_code=transcript["language"],
+            speaker_diarization=transcript["speakerDiarization"],
+            pii_redaction=transcript["piiRedaction"],
+            speaker_count=transcript.get("speakerCount"),
+            confidence_score=transcript.get("confidenceScore"),
+        )
+        self._publisher.publish_ai_enrichment(next_event)
+        return TranscriptionResult(next_event=next_event)
+
+    def _resolve_ids(self, event: dict, job_name: str) -> dict:
+        if {"tenantId", "meetingId", "videoItemId"}.issubset(event):
+            return {
+                "tenantId": event["tenantId"],
+                "meetingId": event["meetingId"],
+                "videoItemId": event["videoItemId"],
+                "correlationId": event.get("correlationId"),
+            }
+
+        parts = job_name.split("__")
+        if len(parts) != 4 or parts[0] != "transcribe":
+            raise ValueError("Transcription job name must use transcribe__tenantId__meetingId__videoItemId.")
+        return {
+            "tenantId": parts[1],
+            "meetingId": parts[2],
+            "videoItemId": parts[3],
+            "correlationId": event.get("correlationId"),
+        }
+
+    def _resolve_transcript(self, event: dict, ids: dict) -> dict:
+        transcript = event.get("transcript", {})
+        return {
+            "bucket": transcript.get("bucket") or event.get("transcriptOutputBucket", "transcript-bucket"),
+            "key": transcript.get("key") or f'{ids["tenantId"]}/{ids["meetingId"]}/{ids["videoItemId"]}/transcript.json',
+            "language": transcript.get("language") or event.get("languageCode", "en-US"),
+            "speakerDiarization": transcript.get("speakerDiarization", event.get("speakerDiarization", True)),
+            "piiRedaction": transcript.get("piiRedaction", event.get("piiRedaction", False)),
+        }

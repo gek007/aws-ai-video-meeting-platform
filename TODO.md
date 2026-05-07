@@ -89,7 +89,7 @@ Still pending are the larger runtime integrations and infrastructure pieces list
 - [x] Create `transcripts` records in Aurora
 - [x] Update `video_items.transcription_status`
 - [x] Publish transcript-ready event
-- [ ] Add async Transcribe completion callback handler that emits transcript-ready events
+- [x] Add async Transcribe completion callback handler that emits transcript-ready events
 
 ## AI Enrichment Service
 

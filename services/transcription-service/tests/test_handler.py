@@ -20,3 +20,19 @@ def test_transcription_handler_returns_transcript_ready():
     body = json.loads(response["body"])
     assert body["nextEvent"]["eventType"] == "meeting.transcript.ready"
     assert body["nextEvent"]["transcript"]["key"] == "tenant_123/mtg_123/vid_123/transcript.json"
+
+
+def test_transcription_handler_routes_completion_event():
+    response = lambda_handler(
+        {
+            "detail": {
+                "TranscriptionJobName": "transcribe__tenant_123__mtg_123__vid_123",
+                "TranscriptionJobStatus": "COMPLETED",
+            },
+            "transcriptOutputBucket": "transcript-bucket",
+        },
+        None,
+    )
+    body = json.loads(response["body"])
+    assert body["nextEvent"]["eventType"] == "meeting.transcript.ready"
+    assert body["nextEvent"]["tenantId"] == "tenant_123"
