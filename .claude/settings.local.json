@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"G:\\\\__VSCode\\\\youtube-analytic\\\\.claude\\\\worktrees\\\\bold-yalow-879199\" log --oneline -5)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
+    ]
+  }
+}
