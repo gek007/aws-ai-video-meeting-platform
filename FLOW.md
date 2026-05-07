@@ -2,17 +2,17 @@
 
 ## Current Flow
 
-This file describes the current implemented flow in the repository, not only the target architecture.
+This file describes the current implemented flow, not only the target architecture.
 
 ## Step-by-Step Flow
 
-### 1. Video arrives
+### 1. Video arrives / Upload initiated
 
-A meeting recording is uploaded manually or comes from an external source such as Zoom or Teams. The file is stored in `S3 raw-video`.
+A client calls `POST /upload/init`. The API builds a pre-signed S3 PUT URL via `S3PresignedUploader` (or `InMemoryUploader` when `RAW_VIDEO_BUCKET` is not set). The URL includes tenant/meeting/video IDs as S3 object metadata. The client PUTs the file directly to S3.
 
 ### 2. Upload event is raised
 
-`EventBridge` detects the new object and triggers the `ingestion-service` Lambda.
+`EventBridge` detects the new S3 object and triggers the `ingestion-service` Lambda.
 
 ### 3. Ingestion registers the meeting
 
@@ -24,165 +24,110 @@ The `ingestion-service` creates initial metadata records in `Aurora PostgreSQL`:
 
 It then sends a `media.processing.requested` message to `SQS: media-processing`.
 
-### 4. Media processing starts
+### 4. Media processing
 
-The `media-service` consumes that queue message and prepares the normalized audio artifact contract.
+The `media-service` consumes the queue message and converts video to audio using one of three converters:
 
-Current code behavior:
+- **`InMemoryConverter`** — returns a ready artifact immediately (tests and local dev)
+- **`FFmpegSubprocessConverter`** — runs real FFmpeg in a subprocess; returns a ready artifact
+- **`MediaConvertAdapter`** — submits an async AWS Elemental MediaConvert job; stores `tenantId/meetingId/videoItemId` in `UserMetadata`; returns a not-ready artifact with a `job_id`
 
-- derives a deterministic `S3 audio` key
-- persists `audio_s3_key` and media processing state in `Aurora`
-- sends `transcription.requested` to the transcription queue
+When the artifact is ready (sync path), `media-service` persists the audio artifact reference and sends `transcription.requested` to `SQS: transcription`.
 
-Current limitation:
+### 5. MediaConvert completion (async path only)
 
-- real video-to-audio conversion is not implemented yet
+When a MediaConvert job finishes, EventBridge delivers a completion event to `media-service`. `MediaConversionCompletionService` reads `detail.userMetadata` to recover `tenantId/meetingId/videoItemId`, then continues the pipeline identically to the sync path.
 
-### 5. Transcription starts
+### 6. Transcription starts
 
-The `transcription-service` receives the audio event and can submit the file to `Amazon Transcribe`.
+The `transcription-service` receives the audio event and submits it to `Amazon Transcribe` when `TRANSCRIBE_OUTPUT_BUCKET` is configured. Otherwise uses a local adapter.
 
-Current code behavior:
+- Persists transcript reference metadata in Aurora
+- Handles completed Transcribe events and publishes `meeting.transcript.ready` to `SQS: ai-enrichment`
 
-- starts an `Amazon Transcribe` job when `TRANSCRIBE_OUTPUT_BUCKET` is configured
-- returns `transcription.job.started` for real Transcribe submissions
-- persists transcript reference data in `Aurora` only when the transcript artifact is ready
-- handles completed Transcribe events and publishes `meeting.transcript.ready` to `SQS: ai-enrichment`
+### 7. AI enrichment
 
-Current limitation:
-
-- failed Transcribe jobs currently return `transcription.job.failed`, but richer retry and alerting behavior is still pending
-
-### 6. AI enrichment runs
-
-The `ai-enrichment-service` consumes the transcript-ready event.
-
-Current code behavior:
+The `ai-enrichment-service` consumes the transcript-ready event:
 
 - chunks transcript content
-- calls `Amazon Bedrock` when `BEDROCK_MODEL_ID` is configured
-- uses deterministic local generation when Bedrock is not configured
-- builds structured meeting intelligence
-- persists:
-  - `summaries`
-  - `topics`
-  - `decisions`
-  - `action_items`
-  - `transcript_chunks`
+- calls `Amazon Bedrock` when `BEDROCK_MODEL_ID` is configured; otherwise uses `DeterministicEnrichmentGenerator`
+- persists: `summaries`, `topics`, `decisions`, `action_items`, `transcript_chunks`
+- generates embeddings via `BedrockEmbeddingGenerator` when `BEDROCK_EMBEDDING_MODEL_ID` is configured
+- indexes chunks into `OpenSearch Serverless` via `OpenSearchVectorIndexer` when `OPENSEARCH_ENDPOINT` is configured
 - updates `video_items.ai_enrichment_status`
 - publishes `meeting.intelligence.generated` to `SNS`
 
-Current limitation:
+### 8. SNS fans out to consumers
 
-- embeddings and `OpenSearch` indexing are still planned
-
-### 7. SNS fans out to consumers
-
-`SNS` distributes the intelligence event to multiple downstream queues independently, including:
+`SNS` distributes the intelligence event to multiple downstream queues:
 
 - `SQS: task-creation`
 - `SQS: notifications`
 
-### 8. Task creation flow
+### 9. Task creation flow
 
 The `task-orchestrator-service` reads extracted action items and prepares them for external systems.
 
-Then the `integration-service` creates issues in tools such as:
+The `integration-service` creates issues in Jira or GitHub Issues:
 
-- `Jira`
-- `GitHub Issues`
+- **Idempotency**: `find_existing_task()` checks for an existing record matching `(action_item_id, provider, provider_project_key)` before calling the connector. Returns `external.task.exists` with `duplicate: true` when already present.
+- Created external IDs, URLs, and status are stored in `Aurora: external_tasks`
 
-Created external IDs and URLs are stored in `Aurora` in `external_tasks`.
+### 10. Notification flow
 
-### 9. Notification flow
+The `notification-service` sends updates through `CompositeSender` which routes by channel:
 
-The `notification-service` sends updates to users, such as:
+- `email` → `SESNotificationSender` (Amazon SES)
+- `slack` → `SlackWebhookSender` (Slack incoming webhook)
+- local/test → `InMemoryNotificationSender`
 
-- summary ready
-- action item created
-- task status changed
+Notification delivery status is persisted in Aurora.
 
-Current code behavior:
+### 11. Status observation
 
-- persists notification records in `Aurora`
-- can send email through `Amazon SES`
-- uses an in-memory sender when SES is not configured
+The `status-observer-service` is intended to run on schedule via `EventBridge Scheduler`.
 
-Still planned:
+Current behavior:
 
-- Slack delivery
-- Teams delivery
-- retry and DLQ behavior
+- `InMemoryStatusPoller` — returns status from a seeded map (tests)
+- `JiraStatusPoller` — polls Jira REST API
+- `GitHubStatusPoller` — polls GitHub Issues API
+- Compares fetched status against the last persisted status
+- Emits `task.status.changed` when a prior record exists and the status differs
+- Emits `task.status.synced` when no prior record exists (first observation)
 
-### 10. Status observation flow
+### 12. Search and related meetings
 
-The `status-observer-service` is intended to run on schedule using `EventBridge Scheduler`.
+The `search-query-service` serves two operations:
 
-Current code behavior:
+- **`search_meetings`** — keyword search with ILIKE on title and summary content (Aurora) or keyword title match (in-memory)
+- **`related_meetings`** — finds meetings sharing topic labels, scored by fraction of shared topics (Aurora JOIN or in-memory scoring)
 
-- accepts a status event payload
-- updates `external_tasks.external_status`
-- updates `last_synced_at`
-- returns a `task.status.changed` event shape
+The handler auto-selects `AuroraSearchStore` when `AURORA_DATABASE_URL` / `DATABASE_URL` is set; otherwise uses no store (empty results).
 
-Current limitation:
+### 13. Meeting chat with RAG
 
-- real scheduled polling against external providers is not implemented yet
+When a user posts a question to `POST /meetings/{id}/chat`:
 
-### 11. Search and related meetings
+1. `_build_retriever()` in the API picks either `OpenSearchRetriever` (when `OPENSEARCH_ENDPOINT` is set) or `InMemoryRetriever` seeded from `repository.get_transcript_chunks()`
+2. `ChatRAGService` retrieves the most relevant transcript chunks
+3. `BedrockAnswerer` (when `BEDROCK_MODEL_ID` is set) or `InMemoryAnswerer` generates a grounded answer
+4. Response includes the answer, citations with chunk metadata, confidence level, and meeting/question echo
 
-When the user wants related meetings, the `search-query-service` is intended to use metadata from `Aurora` plus vectors from `OpenSearch Serverless`.
+### 14. Aurora's role
 
-Current code behavior:
+`Aurora PostgreSQL` is the system of record for all transactional state. All Aurora stores inherit from `AuroraBaseStore` in `libs/shared/src/shared/aurora.py`, which provides a lazy `psycopg` import and an injectable `connection_factory` for tests.
 
-- query behavior is scaffolded
-- real OpenSearch-backed similarity retrieval is still pending
+### 15. S3's role
 
-### 12. Meeting chat with RAG
+`S3` stores:
 
-When the user asks a question about a meeting:
-
-- the `chat-rag-service` receives the question
-- it retrieves transcript-like and artifact-like context
-- it returns a grounded answer with citations
-
-Current limitation:
-
-- real embeddings and `Bedrock` generation are still pending
-
-### 13. Aurora's role across the whole flow
-
-`Aurora PostgreSQL` is the system of record for:
-
-- meetings
-- video items
-- transcript references
-- summaries
-- topics
-- decisions
-- action items
-- external tasks
-- notifications
-- chat sessions and messages
-- processing jobs
-
-### 14. S3's role
-
-`S3` stores the heavy artifacts:
-
-- raw video
+- raw video (via pre-signed PUT upload)
 - extracted audio
 - transcript files
 - optional derived exports
 
-### 15. Why SNS and SQS together
+### 16. SNS + SQS pattern
 
-We use:
-
-- `SQS` for strict stage-by-stage pipeline processing
-- `SNS` when one completed event must fan out to multiple consumers
-
-So the typical patterns are:
-
-- `SQS -> Lambda`
-- `SNS -> SQS -> Lambda`
+- `SQS → Lambda` for strict sequential stages (media → transcription → AI enrichment)
+- `SNS → SQS → Lambda` for fan-out events (meeting intelligence generated, task status changed)

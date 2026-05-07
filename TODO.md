@@ -2,18 +2,29 @@
 
 ## Current Status
 
-Implemented already:
+Implemented (160 passing tests as of May 2026):
 
-- Python Lambda-first service scaffold across the main backend services
-- Aurora persistence for the core pipeline and downstream task/notification state
+- Python Lambda-first service scaffold across all backend services with 160 passing tests
+- Aurora persistence via `AuroraBaseStore` shared base class across all 7 services
 - SQS publishers for ingestion, media, and transcription stages
 - SNS publish from AI enrichment
-- `Amazon Transcribe` submission adapter
+- `Amazon Transcribe` submission adapter + completion callback handler
 - `Amazon SES` email sender adapter
-- `Amazon Bedrock` enrichment adapter
+- `Amazon Bedrock` enrichment + embedding generation adapters
+- `OpenSearch Serverless` vector indexer adapter
+- `AWS MediaConvert` adapter with `UserMetadata` propagation for EventBridge callbacks
+- `FFmpeg` subprocess converter adapter
+- `S3` pre-signed PUT upload via `S3PresignedUploader`
+- `Jira` and `GitHub Issues` status pollers
+- `Slack webhook` notification sender
+- `CompositeSender` routing by channel type (email → SES, slack → Slack)
+- duplicate prevention in `integration-service` (idempotency guard on action_item_id + provider + project_key)
+- `task.status.changed` vs `task.status.synced` event distinction in `status-observer-service`
+- `search-query-service` with `InMemorySearchStore` and `AuroraSearchStore`
+- `chat-rag-service` with Retriever + Answerer protocol pattern and in-memory fallback
 - integration tests for the queue-driven pipeline baseline
 
-Still pending are the larger runtime integrations and infrastructure pieces listed below.
+Still pending are infrastructure wiring and the larger runtime pieces listed below.
 
 ## Architecture and Planning
 
@@ -64,7 +75,7 @@ Still pending are the larger runtime integrations and infrastructure pieces list
 ## Ingestion Service
 
 - [x] Implement upload initialization API
-- [ ] Implement authenticated pre-signed upload flow
+- [x] Implement authenticated pre-signed upload flow
 - [x] Implement `S3` upload event handling
 - [x] Persist initial `meeting` record
 - [x] Persist initial `video_items` record in Aurora
@@ -75,7 +86,7 @@ Still pending are the larger runtime integrations and infrastructure pieces list
 ## Media Processing Service
 
 - [ ] Implement video metadata extraction
-- [ ] Implement real video-to-audio conversion
+- [x] Implement real video-to-audio conversion (InMemoryConverter, FFmpegSubprocessConverter, MediaConvertAdapter)
 - [x] Persist audio artifact reference in `video_items`
 - [x] Update `video_items.processing_status`
 - [x] Publish transcription job event
@@ -103,8 +114,8 @@ Still pending are the larger runtime integrations and infrastructure pieces list
 - [x] Implement structured JSON output validation
 - [x] Persist summaries, topics, decisions, and action items
 - [x] Update `video_items.ai_enrichment_status`
-- [ ] Generate embeddings for transcript chunks and summaries
-- [ ] Store embeddings in `OpenSearch`
+- [x] Generate embeddings for transcript chunks and summaries (BedrockEmbeddingGenerator)
+- [x] Store embeddings in `OpenSearch` (OpenSearchVectorIndexer)
 - [ ] Publish queue subscriptions for task and notification consumers in infrastructure
 - [x] Publish `SNS` domain events for fan-out consumers
 
@@ -125,7 +136,7 @@ Still pending are the larger runtime integrations and infrastructure pieces list
 - [ ] Implement question embedding generation
 - [x] Implement retrieval pipeline over transcript chunks and structured artifacts
 - [x] Add permission-aware retrieval filters by tenant and meeting
-- [ ] Implement grounded answer generation with `Amazon Bedrock`
+- [x] Implement grounded answer generation with `Amazon Bedrock` (BedrockAnswerer)
 - [x] Require citations in every answer when evidence exists
 - [x] Return insufficient-information responses when retrieval is weak
 - [x] Implement `POST /meetings/{id}/chat`
@@ -140,7 +151,7 @@ Still pending are the larger runtime integrations and infrastructure pieces list
 - [x] Implement `GitHub Issues` connector
 - [ ] Map internal action item types to provider issue types
 - [x] Persist external task IDs and URLs
-- [ ] Add duplicate prevention for repeated task creation
+- [x] Add duplicate prevention for repeated task creation
 - [ ] Add rate limit and retry handling
 - [ ] Subscribe integration queues to relevant `SNS` topics in infrastructure
 
@@ -150,7 +161,7 @@ Still pending are the larger runtime integrations and infrastructure pieces list
 - [x] Define notification templates for action item creation
 - [x] Define notification templates for task status changes
 - [x] Implement email delivery with `SES`
-- [ ] Implement Slack webhook delivery
+- [x] Implement Slack webhook delivery (SlackWebhookSender + CompositeSender)
 - [x] Persist notification delivery status
 - [ ] Add retry and DLQ handling
 - [ ] Subscribe notification queues to relevant `SNS` topics in infrastructure
@@ -158,7 +169,7 @@ Still pending are the larger runtime integrations and infrastructure pieces list
 ## Status Observation
 
 - [ ] Implement scheduled sync with `EventBridge Scheduler`
-- [ ] Implement polling for open external tasks
+- [x] Implement polling for open external tasks (JiraStatusPoller, GitHubStatusPoller)
 - [x] Persist external status changes
 - [ ] Trigger notifications on meaningful status changes
 - [ ] Add stale-item reminder logic
