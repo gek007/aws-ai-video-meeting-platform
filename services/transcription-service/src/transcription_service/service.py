@@ -4,10 +4,27 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from shared.events import base_event
+from transcription_service.transcriber import TranscriptionArtifact
 
 
 class QueuePublisher(Protocol):
     def publish_ai_enrichment(self, payload: dict) -> None: ...
+
+
+class Transcriber(Protocol):
+    def transcribe(
+        self,
+        *,
+        tenant_id: str,
+        meeting_id: str,
+        video_item_id: str,
+        audio_bucket: str,
+        audio_key: str,
+        transcript_bucket: str,
+        language_code: str,
+        speaker_diarization: bool,
+        pii_redaction: bool,
+    ) -> TranscriptionArtifact: ...
 
 
 class MetadataStore(Protocol):
@@ -31,16 +48,47 @@ class TranscriptionResult:
 
 
 class TranscriptionService:
-    def __init__(self, publisher: QueuePublisher, metadata_store: MetadataStore) -> None:
+    def __init__(self, publisher: QueuePublisher, metadata_store: MetadataStore, transcriber: Transcriber) -> None:
         self._publisher = publisher
         self._metadata_store = metadata_store
+        self._transcriber = transcriber
 
     def transcribe(self, event: dict) -> TranscriptionResult:
+        audio = event["audio"]
         transcript_bucket = event.get("transcriptOutputBucket", "transcript-bucket")
-        transcript_key = f'{event["tenantId"]}/{event["meetingId"]}/{event["videoItemId"]}/transcript.json'
         language_code = event.get("languageCode", "en-US")
         speaker_diarization = event.get("speakerDiarization", True)
         pii_redaction = event.get("piiRedaction", False)
+        artifact = self._transcriber.transcribe(
+            tenant_id=event["tenantId"],
+            meeting_id=event["meetingId"],
+            video_item_id=event["videoItemId"],
+            audio_bucket=audio["bucket"],
+            audio_key=audio["key"],
+            transcript_bucket=transcript_bucket,
+            language_code=language_code,
+            speaker_diarization=speaker_diarization,
+            pii_redaction=pii_redaction,
+        )
+        if not artifact.is_ready:
+            next_event = base_event(
+                "transcription.job.started",
+                tenant_id=event["tenantId"],
+                meeting_id=event["meetingId"],
+                video_item_id=event["videoItemId"],
+                correlation_id=event["correlationId"],
+            )
+            next_event["transcriptionProvider"] = artifact.provider
+            next_event["transcriptionJobName"] = artifact.job_name
+            next_event["expectedTranscript"] = {
+                "bucket": artifact.transcript_bucket,
+                "key": artifact.transcript_key,
+                "language": artifact.language_code,
+                "speakerDiarization": artifact.speaker_diarization,
+                "piiRedaction": artifact.pii_redaction,
+            }
+            return TranscriptionResult(next_event=next_event)
+
         next_event = base_event(
             "meeting.transcript.ready",
             tenant_id=event["tenantId"],
@@ -49,21 +97,23 @@ class TranscriptionService:
             correlation_id=event["correlationId"],
         )
         next_event["transcript"] = {
-            "bucket": transcript_bucket,
-            "key": transcript_key,
-            "language": language_code,
-            "speakerDiarization": speaker_diarization,
-            "piiRedaction": pii_redaction,
+            "bucket": artifact.transcript_bucket,
+            "key": artifact.transcript_key,
+            "language": artifact.language_code,
+            "speakerDiarization": artifact.speaker_diarization,
+            "piiRedaction": artifact.pii_redaction,
         }
+        next_event["transcriptionProvider"] = artifact.provider
+        next_event["transcriptionJobName"] = artifact.job_name
         self._metadata_store.record_transcript(
             tenant_id=event["tenantId"],
             meeting_id=event["meetingId"],
             video_item_id=event["videoItemId"],
-            transcript_bucket=transcript_bucket,
-            transcript_key=transcript_key,
-            language_code=language_code,
-            speaker_diarization=speaker_diarization,
-            pii_redaction=pii_redaction,
+            transcript_bucket=artifact.transcript_bucket,
+            transcript_key=artifact.transcript_key,
+            language_code=artifact.language_code,
+            speaker_diarization=artifact.speaker_diarization,
+            pii_redaction=artifact.pii_redaction,
         )
         self._publisher.publish_ai_enrichment(next_event)
         return TranscriptionResult(next_event=next_event)

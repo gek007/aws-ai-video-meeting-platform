@@ -6,17 +6,35 @@ from typing import Protocol
 from contracts.pipeline import ActionItem
 from contracts.validation import require_keys
 from shared.events import base_event
+from shared.ids import new_id
 
 
 class TopicPublisher(Protocol):
     def publish_meeting_intelligence(self, payload: dict) -> None: ...
 
 
+class MetadataStore(Protocol):
+    def persist_enrichment(
+        self,
+        *,
+        tenant_id: str,
+        meeting_id: str,
+        video_item_id: str,
+        summary: str,
+        topics: list[str],
+        decisions: list[dict],
+        action_items: list[dict],
+        transcript_chunks: list[dict],
+        prompt_version: str,
+    ) -> None: ...
+
+
 class AIEnrichmentService:
     PROMPT_VERSION = "v1"
 
-    def __init__(self, publisher: TopicPublisher) -> None:
+    def __init__(self, publisher: TopicPublisher, metadata_store: MetadataStore) -> None:
         self._publisher = publisher
+        self._metadata_store = metadata_store
 
     def chunk_transcript(self, transcript_text: str, chunk_size: int = 120) -> list[dict]:
         words = transcript_text.split()
@@ -57,11 +75,25 @@ class AIEnrichmentService:
         )
         next_event["summary"] = "Meeting summary placeholder."
         next_event["topics"] = ["authentication", "reliability"]
-        next_event["actionItems"] = [asdict(action_item)]
+        persisted_action_item = asdict(action_item)
+        persisted_action_item["actionItemId"] = new_id("act")
+        next_event["actionItems"] = [persisted_action_item]
+        next_event["taskProvider"] = event.get("taskProvider", "jira")
         next_event["promptVersion"] = self.PROMPT_VERSION
         next_event["transcriptChunks"] = chunks
         next_event["embeddings"] = [chunk["embeddingRef"] for chunk in chunks]
         next_event["decisions"] = [{"description": "Prioritize timeout fix", "owner": "owner@example.com"}]
         self.validate_output(next_event)
+        self._metadata_store.persist_enrichment(
+            tenant_id=event["tenantId"],
+            meeting_id=event["meetingId"],
+            video_item_id=event["videoItemId"],
+            summary=next_event["summary"],
+            topics=next_event["topics"],
+            decisions=next_event["decisions"],
+            action_items=next_event["actionItems"],
+            transcript_chunks=next_event["transcriptChunks"],
+            prompt_version=self.PROMPT_VERSION,
+        )
         self._publisher.publish_meeting_intelligence(next_event)
         return next_event

@@ -5,10 +5,9 @@ def test_integration_service_supports_github_provider():
     result = IntegrationService().create_external_task(
         {
             "provider": "github",
-            "items": [{"title": "Fix login timeout", "description": "Investigate issue"}],
+            "items": [{"actionItemId": "act_123", "title": "Fix login timeout", "description": "Investigate issue"}],
         }
     )
 
     assert result["provider"] == "github"
     assert result["externalId"] == "GH-101"
-

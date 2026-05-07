@@ -14,4 +14,19 @@ def test_task_orchestrator_preserves_action_items_and_provider():
     assert result["eventType"] == "task.creation.requested"
     assert result["provider"] == "jira"
     assert result["items"][0]["title"] == "Fix login timeout"
+    assert result["items"][0]["actionItemId"].startswith("act_")
 
+
+def test_task_orchestrator_uses_requested_provider_when_available():
+    result = TaskOrchestratorService().orchestrate(
+        {
+            "tenantId": "tenant_123",
+            "meetingId": "mtg_123",
+            "videoItemId": "vid_123",
+            "taskProvider": "github",
+            "actionItems": [{"actionItemId": "act_123", "title": "Fix login timeout"}],
+        }
+    )
+
+    assert result["provider"] == "github"
+    assert result["items"][0]["actionItemId"] == "act_123"

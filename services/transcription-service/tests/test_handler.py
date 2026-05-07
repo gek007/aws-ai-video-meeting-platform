@@ -8,6 +8,10 @@ def test_transcription_handler_returns_transcript_ready():
             "meetingId": "mtg_123",
             "videoItemId": "vid_123",
             "correlationId": "corr_123",
+            "audio": {
+                "bucket": "audio-bucket",
+                "key": "tenant_123/mtg_123/vid_123/audio.wav",
+            },
         },
         None,
     )

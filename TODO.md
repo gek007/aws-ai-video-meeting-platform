@@ -1,5 +1,19 @@
 # AI Meeting Intelligence Platform TODO
 
+## Current Status
+
+Implemented already:
+
+- Python Lambda-first service scaffold across the main backend services
+- Aurora persistence for the core pipeline and downstream task/notification state
+- SQS publishers for ingestion, media, and transcription stages
+- SNS publish from AI enrichment
+- `Amazon Transcribe` submission adapter
+- `Amazon SES` email sender adapter
+- integration tests for the queue-driven pipeline baseline
+
+Still pending are the larger runtime integrations and infrastructure pieces listed below.
+
 ## Architecture and Planning
 
 - [ ] Confirm MVP scope: upload source, task integrations, notification channels, and tenancy model
@@ -16,10 +30,10 @@
 - [ ] Create AWS accounts or environments for `dev`, `staging`, and `prod`
 - [ ] Provision `S3` buckets for raw video, audio, transcripts, and derived artifacts
 - [ ] Provision `SQS` queues and DLQs for each processing stage
-- [x] Provision `SNS` topics for broadcast-style domain events
+- [x] Provision `SNS` topics for broadcast-style domain events in Terraform baseline
 - [ ] Provision `EventBridge` rules and scheduler jobs
 - [ ] Provision `Aurora PostgreSQL Serverless v2`
-- [ ] Provision `OpenSearch Serverless` if selected
+- [ ] Provision `OpenSearch Serverless`
 - [ ] Provision `Secrets Manager` entries for integrations
 - [ ] Provision `CloudWatch` dashboards, alarms, and log groups
 - [ ] Provision `KMS` keys for encryption
@@ -40,6 +54,9 @@
 - [x] Create schema for `notifications`
 - [x] Create schema for `tenant_integrations`
 - [x] Create schema for `audit_events`
+- [x] Create schema for `chat_sessions`
+- [x] Create schema for `chat_messages`
+- [x] Create schema for `transcript_chunks`
 - [x] Add indexes for tenant, meeting, status, and sync queries
 - [x] Add idempotency constraints and unique keys
 
@@ -48,29 +65,31 @@
 - [x] Implement upload initialization API
 - [ ] Implement authenticated pre-signed upload flow
 - [x] Implement `S3` upload event handling
-- [ ] Persist initial `meeting` record
-- [ ] Persist initial `video_items` record in Aurora
-- [ ] Publish `meeting.uploaded` event to queue
+- [x] Persist initial `meeting` record
+- [x] Persist initial `video_items` record in Aurora
+- [x] Persist initial `processing_jobs` record in Aurora
+- [x] Publish `meeting.uploaded` / media-processing event to queue
 - [x] Add deduplication and idempotency handling
 
 ## Media Processing Service
 
 - [ ] Implement video metadata extraction
-- [ ] Implement video-to-audio conversion
-- [ ] Persist audio artifact reference in `video_items`
-- [ ] Update `video_items.processing_status`
-- [ ] Publish transcription job event
+- [ ] Implement real video-to-audio conversion
+- [x] Persist audio artifact reference in `video_items`
+- [x] Update `video_items.processing_status`
+- [x] Publish transcription job event
 - [ ] Add retry and failure handling
 
 ## Transcription Service
 
-- [ ] Integrate with `Amazon Transcribe`
-- [ ] Support diarization
-- [ ] Support optional PII redaction
-- [ ] Persist transcript artifact reference
-- [ ] Create `transcripts` records in Aurora
-- [ ] Update `video_items.transcription_status`
-- [ ] Publish transcript-ready event
+- [x] Integrate with `Amazon Transcribe` job submission
+- [x] Support diarization flags
+- [x] Support optional PII redaction flags
+- [x] Persist transcript artifact reference
+- [x] Create `transcripts` records in Aurora
+- [x] Update `video_items.transcription_status`
+- [x] Publish transcript-ready event
+- [ ] Add async Transcribe completion callback handler that emits transcript-ready events
 
 ## AI Enrichment Service
 
@@ -81,18 +100,18 @@
 - [ ] Integrate with `Amazon Bedrock` for action item extraction
 - [ ] Integrate with `Amazon Bedrock` for decision and topic extraction
 - [x] Implement structured JSON output validation
-- [ ] Persist summaries, topics, decisions, and action items
-- [ ] Update `video_items.ai_enrichment_status`
+- [x] Persist summaries, topics, decisions, and action items
+- [x] Update `video_items.ai_enrichment_status`
 - [ ] Generate embeddings for transcript chunks and summaries
-- [ ] Publish task-creation events
-- [ ] Publish notification events
-- [ ] Publish `SNS` domain events for fan-out consumers
+- [ ] Store embeddings in `OpenSearch`
+- [ ] Publish queue subscriptions for task and notification consumers in infrastructure
+- [x] Publish `SNS` domain events for fan-out consumers
 
 ## Related Meeting Discovery
 
-- [ ] Design transcript chunk metadata model for vector search
+- [x] Design transcript chunk metadata model for vector search
 - [ ] Store embeddings in selected vector store
-- [x] Implement similarity search API
+- [x] Implement similarity-search-shaped API scaffold
 - [ ] Add re-ranking by tenant, recency, and participants
 - [ ] Return supporting transcript excerpts with results
 
@@ -119,27 +138,27 @@
 - [x] Implement `Jira` connector
 - [x] Implement `GitHub Issues` connector
 - [ ] Map internal action item types to provider issue types
-- [ ] Persist external task IDs and URLs
+- [x] Persist external task IDs and URLs
 - [ ] Add duplicate prevention for repeated task creation
 - [ ] Add rate limit and retry handling
-- [ ] Subscribe integration queues to relevant `SNS` topics
+- [ ] Subscribe integration queues to relevant `SNS` topics in infrastructure
 
 ## Notifications
 
 - [x] Define notification templates for summary ready
 - [x] Define notification templates for action item creation
 - [x] Define notification templates for task status changes
-- [ ] Implement email delivery with `SES`
+- [x] Implement email delivery with `SES`
 - [ ] Implement Slack webhook delivery
-- [ ] Persist notification delivery status
+- [x] Persist notification delivery status
 - [ ] Add retry and DLQ handling
-- [ ] Subscribe notification queues to relevant `SNS` topics
+- [ ] Subscribe notification queues to relevant `SNS` topics in infrastructure
 
 ## Status Observation
 
 - [ ] Implement scheduled sync with `EventBridge Scheduler`
 - [ ] Implement polling for open external tasks
-- [ ] Persist external status changes
+- [x] Persist external status changes
 - [ ] Trigger notifications on meaningful status changes
 - [ ] Add stale-item reminder logic
 
@@ -174,15 +193,15 @@
 - [ ] Enforce encryption at rest with `KMS`
 - [ ] Enforce secure transport for all APIs and webhooks
 - [ ] Store external credentials in `Secrets Manager`
-- [ ] Implement tenant isolation checks
+- [ ] Implement tenant isolation checks end to end
 - [ ] Add audit logging for key actions
 - [ ] Define retention and deletion workflows
 - [ ] Add webhook signature validation where applicable
 
 ## Observability
 
-- [ ] Standardize structured logging format
-- [ ] Propagate correlation IDs across events
+- [ ] Standardize structured logging format across handlers
+- [ ] Propagate correlation IDs across all runtime events
 - [ ] Create `CloudWatch` dashboards
 - [ ] Add alarms for DLQ depth, queue lag, and Lambda failures
 - [ ] Add alarms for `SNS` publish failures and subscription delivery issues
@@ -191,17 +210,17 @@
 
 ## Testing
 
-- [ ] Add unit tests for event schemas and parsers
-- [ ] Add unit tests for idempotency logic
-- [ ] Add unit tests for retrieval ranking and citation generation
+- [x] Add unit tests for event schemas and parsers baseline
+- [x] Add unit tests for idempotency logic baseline
+- [x] Add unit tests for retrieval and citation behavior baseline
 - [x] Add integration tests for queue-driven flows
 - [ ] Add integration tests for Bedrock structured outputs
 - [x] Add integration tests for RAG question answering
-- [ ] Add integration tests for external connectors
-- [ ] Add end-to-end test for full meeting processing flow
+- [x] Add integration tests for external connectors baseline
+- [ ] Add end-to-end test for full meeting processing flow with real AWS boundaries
 - [ ] Add end-to-end test for meeting chat quality and permissions
 - [ ] Add load tests for burst upload scenarios
-- [ ] Add chaos/failure tests for external dependency outages
+- [ ] Add chaos or failure tests for external dependency outages
 
 ## Delivery and Release
 

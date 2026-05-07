@@ -1,9 +1,13 @@
 from ai_enrichment_service.publisher import InMemoryTopicPublisher
+from ai_enrichment_service.store import InMemoryMetadataStore
 from ai_enrichment_service.service import AIEnrichmentService
 
 
 def test_ai_enrichment_chunks_transcript_and_sets_prompt_version():
-    service = AIEnrichmentService(publisher=InMemoryTopicPublisher())
+    service = AIEnrichmentService(
+        publisher=InMemoryTopicPublisher(),
+        metadata_store=InMemoryMetadataStore(),
+    )
     result = service.enrich(
         {
             "tenantId": "tenant_123",

@@ -4,6 +4,38 @@
 
 Build an AWS-native AI Meeting Intelligence Platform that processes meeting recordings, converts them into structured knowledge, creates actionable items in external systems, notifies participants, tracks task status, and supports chat-based Q&A over meeting content using RAG.
 
+## Current Implementation Snapshot
+
+The repository currently contains a working Python Lambda-first scaffold with passing tests and real adapters in selected places.
+
+Implemented in code:
+
+- real Aurora persistence for:
+  - `ingestion-service`
+  - `media-service`
+  - `transcription-service`
+  - `ai-enrichment-service`
+  - `integration-service`
+  - `notification-service`
+  - `status-observer-service`
+- real SQS publishers for:
+  - `ingestion-service -> media-processing`
+  - `media-service -> transcription`
+  - `transcription-service -> ai-enrichment`
+- real SNS publisher for:
+  - `ai-enrichment-service -> meeting-intelligence-topic`
+- real AWS adapters for:
+  - `transcription-service -> Amazon Transcribe`
+  - `notification-service -> Amazon SES`
+
+Still planned:
+
+- real media conversion engine
+- real `Amazon Bedrock`
+- real `OpenSearch` indexing
+- real scheduled AWS infrastructure
+- real async Transcribe completion callback handler
+
 ## Core Product Capabilities
 
 - ingest meeting video from upload or external connector
@@ -31,11 +63,11 @@ The platform uses a hybrid `SNS + SQS + Lambda` event-driven model.
 - `Lambda`
   Runs ingestion, orchestration, enrichment, notification, and sync logic.
 - `Bedrock`
-  Provides summarization, extraction, embeddings, and chat answer generation.
+  Planned provider for summarization, extraction, embeddings, and chat answer generation.
 - `Aurora PostgreSQL`
   Stores transactional metadata and media lifecycle state.
 - `OpenSearch Serverless`
-  Stores vectors for related meeting discovery and RAG retrieval.
+  Planned vector store for related meeting discovery and RAG retrieval.
 - `Transcribe`
   Performs speech-to-text on meeting audio.
 - `SES` / chat webhooks
@@ -44,20 +76,26 @@ The platform uses a hybrid `SNS + SQS + Lambda` event-driven model.
 ## End-to-End Flow
 
 1. A meeting recording is uploaded to `S3` or received from a connector.
-2. `EventBridge` triggers `Ingestion Lambda`.
+2. `EventBridge` triggers `ingestion-service`.
 3. Ingestion persists `meeting`, `video_item`, and `processing_job` records in `Aurora`.
 4. Ingestion sends the job to `SQS: media-processing`.
-5. Media processing converts video to audio and stores the result in `S3`.
-6. The transcription stage sends audio to `Amazon Transcribe`.
-7. Transcript artifacts are stored in `S3` and referenced in `Aurora`.
-8. AI enrichment loads transcript content and calls `Bedrock`.
-9. Enrichment persists summaries, topics, decisions, action items, and embeddings metadata.
-10. Enrichment publishes a domain event to `SNS`.
-11. `SNS` fans out to `SQS` consumers such as task creation and notifications.
-12. External task integrations create issues in tools like `Jira` or `GitHub`.
-13. Notification services send updates to participants and owners.
-14. Scheduled observers poll external task status and update local state.
-15. Chat queries use RAG over transcript chunks, summaries, and related artifacts.
+5. Media processing prepares normalized audio metadata, persists the audio artifact reference, and sends the next message to `SQS: transcription`.
+6. The transcription stage submits audio to `Amazon Transcribe` or local in-memory transcription. Only ready transcript artifacts are persisted and sent to `SQS: ai-enrichment`; real Transcribe submissions currently return `transcription.job.started`.
+7. AI enrichment persists summaries, topics, decisions, action items, and transcript chunks.
+8. Enrichment publishes `meeting.intelligence.generated` to `SNS`.
+9. `SNS` fans out to `SQS` consumers such as task creation and notifications.
+10. External task integrations create issues in tools like `Jira` or `GitHub`.
+11. Notification services send updates to participants and owners.
+12. Status observers poll external task status and update local state.
+13. Chat queries use RAG over transcript chunks, summaries, and related artifacts.
+
+## Important Implementation Note
+
+The current code intentionally preserves a simplified downstream contract:
+
+- `transcription-service` starts `Amazon Transcribe` and returns `transcription.job.started`; the callback handler that emits `meeting.transcript.ready` is still pending.
+
+That keeps the rest of the repo consistent while the true callback-based completion flow is still pending.
 
 ## Canonical Eventing Pattern
 
@@ -83,23 +121,23 @@ This preserves:
 - `ingestion-service`
   Validates uploads, creates core records, and starts processing.
 - `media-service`
-  Extracts audio and updates `video_items` processing state.
+  Builds normalized audio artifact metadata and updates `video_items`.
 - `transcription-service`
-  Orchestrates `Amazon Transcribe`.
+  Submits audio to `Amazon Transcribe`, persists ready transcript state, and forwards the pipeline event when the transcript exists.
 - `ai-enrichment-service`
-  Calls `Bedrock` for summary, action item extraction, topic extraction, and embeddings.
+  Persists structured meeting intelligence and publishes the SNS fan-out event.
 - `task-orchestrator-service`
   Converts extracted action items into integration-ready work.
 - `integration-service`
-  Connects to `Jira`, `GitHub`, `Linear`, `Asana`, Slack, Teams, and similar targets.
+  Connects to `Jira`, `GitHub`, and similar targets and persists `external_tasks`.
 - `notification-service`
-  Delivers emails and chat notifications.
+  Delivers emails through `SES` or in-memory fallback and persists notification history.
 - `status-observer-service`
-  Polls external systems for task changes.
+  Polls external systems and persists task status changes.
 - `search-query-service`
   Serves read APIs and retrieval-oriented queries.
 - `chat-rag-service`
-  Answers meeting questions using retrieved context and `Bedrock`.
+  Answers meeting questions using retrieved context and citations.
 
 ## Repository Structure
 
@@ -107,6 +145,8 @@ This preserves:
 .
 |-- AGENT.md
 |-- AI_MEETING_INTELLIGENCE_PLATFORM_TDD.md
+|-- ARCHITECTURE_DIAGRAMS.md
+|-- FLOW.md
 |-- TODO.md
 |-- README.md
 |-- apps/
@@ -130,94 +170,48 @@ This preserves:
 |   `-- connectors/
 |-- infra/
 |   `-- terraform/
-|       |-- bootstrap/
-|       |-- environments/
-|       `-- modules/
 |-- database/
 |   |-- migrations/
 |   `-- seeds/
-|-- docs/
-|   |-- architecture/
-|   |-- api/
-|   `-- operations/
-|-- scripts/
 `-- tests/
-    |-- integration/
-    `-- e2e/
 ```
 
 ## Database Summary
 
 `Aurora PostgreSQL` is the system of record for metadata, workflow state, integrations, and audit history.
 
-### Core Tables
+Core implemented persistence areas:
 
 - `meetings`
-  Business-level meeting record.
 - `video_items`
-  Media-specific record for uploaded video assets, lifecycle status, and artifact pointers.
-- `participants`
-  Meeting participants and ownership data.
 - `transcripts`
-  Transcript metadata and storage references.
 - `summaries`
-  Generated meeting summaries.
 - `topics`
-  Extracted discussion topics.
 - `decisions`
-  Captured meeting decisions.
 - `action_items`
-  Extracted tasks, bugs, and features.
 - `external_tasks`
-  Mapping from internal action items to external systems.
 - `processing_jobs`
-  State of pipeline jobs and retryable stages.
 - `notifications`
-  Outbound notification history.
-- `tenant_integrations`
-  External system configuration by tenant.
-- `audit_events`
-  Immutable operational and business audit history.
-- `chat_sessions`
-  Persisted meeting chat sessions when enabled.
-- `chat_messages`
-  User and assistant messages for meeting chat.
 - `transcript_chunks`
-  Chunk metadata used for retrieval and citations.
 
-## Storage and Search
+Additional schema already present:
 
-- `S3 raw-video`
-  Original uploaded recordings.
-- `S3 audio`
-  Extracted normalized audio.
-- `S3 transcript`
-  Transcription outputs.
-- `S3 derived-artifacts`
-  Optional exports and generated reports.
-- `OpenSearch Serverless`
-  Vector storage for transcript chunks, summaries, topics, and related meeting retrieval.
+- `participants`
+- `tenant_integrations`
+- `audit_events`
+- `chat_sessions`
+- `chat_messages`
 
 ## RAG / Meeting Chat
 
 The platform supports chat over meeting content using retrieval-augmented generation.
 
-### Retrieval Sources
+Current code behavior:
 
-- transcript chunks
-- summaries
-- topics
-- decisions
-- action items
-- optionally related meetings in the same tenant
-
-### Chat Behavior
-
-- question is embedded and matched against indexed meeting artifacts
-- top chunks and structured records are assembled into context
-- `Bedrock` generates an answer constrained to retrieved evidence
-- answer returns with citations and confidence metadata
-- if evidence is weak, the system should return insufficient-information responses
+- retrieval is scaffolded over transcript and artifact-style data
+- tenant-aware filtering exists
+- citation-shaped answers are returned
+- real embeddings and Bedrock-backed answer generation are still pending
 
 ## Recommended AWS Stack
 
@@ -235,29 +229,10 @@ The platform supports chat over meeting content using retrieval-augmented genera
 - observability: `CloudWatch`, `X-Ray`, `CloudTrail`
 - infrastructure as code: `Terraform`
 
-## Operational Principles
-
-- serverless-first where practical
-- event-driven and loosely coupled
-- idempotent consumers
-- at-least-once delivery
-- DLQ per queue
-- correlation IDs propagated across events
-- prompt versioning for `Bedrock` tasks
-- strict tenant isolation
-- KMS encryption for data at rest
-
 ## Current Documentation
 
-- [AI_MEETING_INTELLIGENCE_PLATFORM_TDD.md](G:\__VSCode\youtube-analytic\AI_MEETING_INTELLIGENCE_PLATFORM_TDD.md)
-- [TODO.md](G:\__VSCode\youtube-analytic\TODO.md)
-- [README.md](G:\__VSCode\youtube-analytic\README.md)
-
-## Current Assumptions
-
-- architecture is AWS-native and serverless-first
-- eventing is hybrid `SNS + SQS + Lambda`
-- `Aurora PostgreSQL` is the metadata and workflow system of record
-- `OpenSearch Serverless` is the preferred vector store
-- MVP starts with manual upload plus `Jira` and `GitHub Issues`
-- meeting chat uses RAG with citations
+- [README.md](/G:/__VSCode/youtube-analytic/README.md)
+- [FLOW.md](/G:/__VSCode/youtube-analytic/FLOW.md)
+- [TODO.md](/G:/__VSCode/youtube-analytic/TODO.md)
+- [AI_MEETING_INTELLIGENCE_PLATFORM_TDD.md](/G:/__VSCode/youtube-analytic/AI_MEETING_INTELLIGENCE_PLATFORM_TDD.md)
+- [ARCHITECTURE_DIAGRAMS.md](/G:/__VSCode/youtube-analytic/ARCHITECTURE_DIAGRAMS.md)

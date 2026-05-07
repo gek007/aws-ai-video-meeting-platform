@@ -93,6 +93,32 @@ The system separates:
 
 This keeps failures localized and allows each service to scale independently.
 
+## Current Repository Implementation Status
+
+The current codebase partially implements this design.
+
+Implemented now:
+
+- Python Lambda-first service scaffold across the main services
+- Aurora persistence for ingestion, media, transcription, AI enrichment, external task records, notifications, and task status observation
+- SQS publishers for ingestion, media, and transcription stages
+- SNS publisher for AI enrichment fan-out
+- `Amazon Transcribe` job submission adapter
+- `Amazon SES` sender adapter
+- in-memory fallbacks for local development and tests
+
+Still planned:
+
+- real media conversion through `MediaConvert` or `FFmpeg`
+- real `Amazon Bedrock` inference
+- real `OpenSearch` vector indexing
+- true async `Amazon Transcribe` completion callback handler
+- full AWS infrastructure provisioning and subscriptions
+
+Important current limitation:
+
+- `transcription-service` can submit a real `Amazon Transcribe` job and now returns `transcription.job.started`. The completion callback handler that emits `meeting.transcript.ready` is still pending.
+
 ## Architecture Overview
 
 ```mermaid
@@ -200,6 +226,13 @@ class F,I,M,Q,R queue;
 ```
 
 This is the canonical processing path for a single `video_item`. Each processing `SQS` queue is bound to one Lambda consumer for that stage: media processing, transcription, and AI enrichment. `Aurora PostgreSQL` tracks `video_items` state and derived metadata at each major stage, while `SNS` broadcasts completed intelligence events to independent downstream `SQS` queues such as task creation and notifications.
+
+Current code note:
+
+- the diagram shows the intended steady-state flow
+- the current implementation already persists state and sends the queue or SNS messages shown here
+- `Amazon Transcribe` job submission is integrated, but the completion callback handler is still pending
+- `Amazon Bedrock`, vector indexing, and real media conversion remain planned
 
 ## Query, Chat, And Observation Flows
 
@@ -320,6 +353,8 @@ Notes:
 
 - may use `EventBridge` callbacks from transcription completion
 - should support diarization and optional PII redaction
+- current code submits a Transcribe job through an adapter when configured
+- current code returns `transcription.job.started` for real Transcribe submissions and publishes `meeting.transcript.ready` only when the transcript artifact is ready
 
 ### 4. AI Enrichment Service
 
@@ -335,6 +370,11 @@ Responsibilities:
 - update `video_items.ai_enrichment_status`
 
 This is the main `Bedrock` consumer.
+
+Current code note:
+
+- persistence and SNS publish are implemented
+- real `Bedrock` inference is still pending
 
 ### Eventing Pattern
 
@@ -406,16 +446,17 @@ Responsibilities:
 8. `Media Processing Lambda` sends message to `transcription-queue`.
 9. `transcription-queue` triggers `Transcription Lambda`.
 10. `Transcription Lambda` starts `Amazon Transcribe`.
-11. On completion, transcript JSON is stored in `S3 transcript`.
-12. `Transcription Lambda` updates transcript references and `video_items.transcription_status` in `AuroraDB`.
-13. `Transcription Lambda` sends message to `ai-enrichment-queue`.
-14. `ai-enrichment-queue` triggers `AI Enrichment Lambda`.
-15. `AI Enrichment Lambda` loads transcript, chunks content, and calls `Bedrock`.
-16. `AI Enrichment Lambda` stores summary, topics, decisions, action items, and embeddings.
-17. `AI Enrichment Lambda` queries vector store for related meetings.
-18. `AI Enrichment Lambda` updates `video_items.ai_enrichment_status`.
-19. `AI Enrichment Lambda` publishes `meeting.intelligence.generated` to `SNS`.
-20. `SNS` fans out to subscribed `SQS` queues such as `task-creation` and `notifications`.
+11. In the target flow, transcript JSON is stored in `S3 transcript` after job completion.
+12. In the current codebase, real Transcribe submissions return `transcription.job.started`; ready transcript artifacts are persisted and published as `meeting.transcript.ready`.
+13. `Transcription Lambda` updates transcript references and `video_items.transcription_status` in `AuroraDB`.
+14. `Transcription Lambda` sends message to `ai-enrichment-queue`.
+15. `ai-enrichment-queue` triggers `AI Enrichment Lambda`.
+16. `AI Enrichment Lambda` loads transcript, chunks content, and in the target flow calls `Bedrock`.
+17. `AI Enrichment Lambda` stores summary, topics, decisions, action items, and embeddings metadata.
+18. `AI Enrichment Lambda` queries vector store for related meetings in the target flow.
+19. `AI Enrichment Lambda` updates `video_items.ai_enrichment_status`.
+20. `AI Enrichment Lambda` publishes `meeting.intelligence.generated` to `SNS`.
+21. `SNS` fans out to subscribed `SQS` queues such as `task-creation` and `notifications`.
 
 ### Flow D: Meeting Chat with RAG
 
