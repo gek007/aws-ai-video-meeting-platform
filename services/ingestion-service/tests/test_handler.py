@@ -6,8 +6,10 @@ class StubMetadataStore:
     def __init__(self) -> None:
         self.created = []
 
-    def create_initial_records(self, event) -> None:
-        self.created.append(event.to_dict())
+    def create_initial_records(self, event, processing_job_id: str) -> None:
+        payload = event.to_dict()
+        payload["processingJobId"] = processing_job_id
+        self.created.append(payload)
 
 
 class StubQueuePublisher:

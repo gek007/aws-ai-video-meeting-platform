@@ -1,23 +1,15 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
 
 from ingestion_service.publisher import InMemoryQueuePublisher, SQSQueuePublisher
 from ingestion_service.service import IngestionService
+from ingestion_service.store import AuroraMetadataStore, InMemoryMetadataStore
 from shared.responses import json_response
 
 
-@dataclass(slots=True)
-class InMemoryMetadataStore:
-    records: list[dict] = field(default_factory=list)
-
-    def create_initial_records(self, event) -> None:
-        self.records.append(event.to_dict())
-
-
 def lambda_handler(event: dict, _context) -> dict:
-    metadata_store = InMemoryMetadataStore()
+    metadata_store = _build_metadata_store()
     publisher = _build_publisher()
     service = IngestionService(metadata_store=metadata_store, publisher=publisher)
 
@@ -39,3 +31,9 @@ def _build_publisher():
     if os.getenv("MEDIA_PROCESSING_QUEUE_URL"):
         return SQSQueuePublisher()
     return InMemoryQueuePublisher()
+
+
+def _build_metadata_store():
+    if os.getenv("AURORA_DATABASE_URL") or os.getenv("DATABASE_URL"):
+        return AuroraMetadataStore()
+    return InMemoryMetadataStore()

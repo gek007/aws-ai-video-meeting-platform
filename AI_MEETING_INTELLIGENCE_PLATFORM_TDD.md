@@ -97,22 +97,31 @@ This keeps failures localized and allows each service to scale independently.
 
 ```mermaid
 flowchart LR
+classDef service fill:#dbeafe,stroke:#5b8def,color:#1f2937,stroke-width:1px;
+classDef aws fill:#e8f5e9,stroke:#7cb342,color:#1f2937,stroke-width:1px;
+classDef db fill:#ffe8cc,stroke:#d08c60,color:#1f2937,stroke-width:1px;
+classDef objectstore fill:#fff1b8,stroke:#c9a227,color:#1f2937,stroke-width:1px;
+classDef queue fill:#fff3e0,stroke:#d4a373,color:#1f2937,stroke-width:1px;
+classDef external fill:#f3e8ff,stroke:#9b8ad6,color:#1f2937,stroke-width:1px;
+
 A[Meeting Source / UI / Connector] --> B[S3 Raw Video Bucket]
 B --> C[EventBridge]
-C --> D[Ingestion Lambda]
+C --> D["Lambda: ingestion-service<br/>- Process: create meeting, video_item, processing_job metadata<br/>- Output: send message to media-processing SQS"]
 D --> E[(Aurora PostgreSQL)]
 D --> F[SQS: media-processing]
 
-F --> G[MediaConvert or ECS Fargate FFmpeg]
+F --> G["Lambda: media-service<br/>- Process: convert video to normalized audio, update media state<br/>- Output: send message to transcription SQS"]
+G --> E
 G --> H[S3 Audio Bucket]
-H --> I[SQS: transcription]
+G --> I[SQS: transcription]
 
-I --> J[Transcription Lambda]
+I --> J["Lambda: transcription-service<br/>- Process: start transcription, store transcript reference<br/>- Output: send message to ai-enrichment SQS"]
 J --> K[Amazon Transcribe]
-K --> L[S3 Transcript Bucket]
-L --> M[SQS: ai-enrichment]
+J --> E
+J --> L[S3 Transcript Bucket]
+J --> M[SQS: ai-enrichment]
 
-M --> N[AI Enrichment Lambda]
+M --> N["Lambda: ai-enrichment-service<br/>- Process: summarize, extract topics/decisions/action items, generate embeddings<br/>- Output: publish meeting intelligence to SNS"]
 N --> O[Amazon Bedrock]
 N --> E
 N --> P[(OpenSearch Vector Index)]
@@ -120,58 +129,114 @@ N --> ZA[SNS: meeting-intelligence-topic]
 ZA --> Q[SQS: task-creation]
 ZA --> R[SQS: notifications]
 
-Y[Chat API / Query Service] --> P
+Y["Lambda: search-query-service / chat-rag-service<br/>- Process: search related meetings, answer meeting questions with RAG<br/>- Output: grounded response with citations"] --> P
 Y --> E
 Y --> O
 
-Q --> S[Integration Lambda]
+Q --> S["Lambda: task-orchestrator-service<br/>- Process: map action items to provider-ready task requests<br/>- Output: call integration provider and persist external task result"]
 S --> T[Jira / GitHub / Linear / Asana]
 S --> E
 
-R --> U[Notification Lambda]
+R --> U["Lambda: notification-service<br/>- Process: render template and deliver notification<br/>- Output: email / Slack / Teams message"]
 U --> V[SES / Slack / Teams]
 U --> E
 
-W[EventBridge Scheduler] --> X[Status Poller Lambda]
-X --> T
-X --> E
-X --> R
+AA[EventBridge Scheduler] --> W["Lambda: status-observer-service<br/>- Process: poll external task status and detect changes<br/>- Output: update state and push notification event"]
+W --> T
+W --> E
+W --> R
+
+class D,G,J,N,Y,S,U,W service;
+class C,K,O,P,ZA aws;
+class E db;
+class B,H,L objectstore;
+class F,I,M,Q,R queue;
+class T,V external;
 ```
 
 ## Video Processing Flow
 
 ```mermaid
 flowchart TD
+classDef service fill:#dbeafe,stroke:#5b8def,color:#1f2937,stroke-width:1px;
+classDef aws fill:#e8f5e9,stroke:#7cb342,color:#1f2937,stroke-width:1px;
+classDef db fill:#ffe8cc,stroke:#d08c60,color:#1f2937,stroke-width:1px;
+classDef objectstore fill:#fff1b8,stroke:#c9a227,color:#1f2937,stroke-width:1px;
+classDef queue fill:#fff3e0,stroke:#d4a373,color:#1f2937,stroke-width:1px;
+classDef external fill:#f3e8ff,stroke:#9b8ad6,color:#1f2937,stroke-width:1px;
+
 A["Meeting Upload / Connector"] --> B["S3 Raw Video Bucket"]
 B --> C["EventBridge"]
-C --> D["Ingestion Lambda"]
+C --> D["Lambda: ingestion-service<br/>- Process: create metadata records<br/>- Output: send message to media-processing SQS"]
 D --> E["Aurora PostgreSQL<br/>(meetings + video_items + processing_jobs)"]
 D --> F["SQS: media-processing"]
 
-F --> G["MediaConvert / ECS Fargate FFmpeg"]
-G --> E
+F --> G["Lambda: media-service<br/>- Process: convert video to audio, update media state<br/>- Output: send message to transcription SQS"]
 G --> H["S3 Audio Bucket"]
-H --> I["SQS: transcription"]
+G --> E
+G --> I["SQS: transcription"]
 
-I --> J["Transcription Lambda"]
-J --> E
+I --> J["Lambda: transcription-service<br/>- Process: create transcript, store transcript reference<br/>- Output: send message to ai-enrichment SQS"]
 J --> K["Amazon Transcribe"]
-K --> L["S3 Transcript Bucket"]
-L --> M["SQS: ai-enrichment"]
+J --> L["S3 Transcript Bucket"]
+J --> E
+J --> M["SQS: ai-enrichment"]
 
-M --> N["AI Enrichment Lambda"]
-N --> E
+M --> N["Lambda: ai-enrichment-service<br/>- Process: summarize, extract action items, topics, decisions<br/>- Output: publish meeting intelligence to SNS"]
 N --> O["Amazon Bedrock"]
 N --> P["OpenSearch Vector Index"]
 N --> ZA["SNS: meeting-intelligence-topic"]
+N --> E
 ZA --> Q["SQS: task-creation"]
 ZA --> R["SQS: notifications"]
+Q --> S["Lambda: task-orchestrator-service<br/>- Process: prepare external task request and persist external result"]
+R --> T["Lambda: notification-service<br/>- Process: deliver participant notification<br/>- Output: email / Slack / Teams message"]
 
-O --> N
-P --> N
+class D,G,J,N,S,T service;
+class C,K,O,P,ZA aws;
+class E db;
+class B,H,L objectstore;
+class F,I,M,Q,R queue;
 ```
 
-This is the canonical processing path for a single `video_item`. It shows the media lifecycle from upload through audio extraction, transcription, AI enrichment, vector indexing, and downstream task and notification fan-out. `Aurora PostgreSQL` tracks `video_items` state and derived metadata at each major stage, while `SNS` broadcasts completed intelligence events to independent `SQS` consumer queues.
+This is the canonical processing path for a single `video_item`. Each processing `SQS` queue is bound to one Lambda consumer for that stage: media processing, transcription, and AI enrichment. `Aurora PostgreSQL` tracks `video_items` state and derived metadata at each major stage, while `SNS` broadcasts completed intelligence events to independent downstream `SQS` queues such as task creation and notifications.
+
+## Query, Chat, And Observation Flows
+
+```mermaid
+flowchart LR
+classDef service fill:#dbeafe,stroke:#5b8def,color:#1f2937,stroke-width:1px;
+classDef aws fill:#e8f5e9,stroke:#7cb342,color:#1f2937,stroke-width:1px;
+classDef db fill:#ffe8cc,stroke:#d08c60,color:#1f2937,stroke-width:1px;
+classDef objectstore fill:#fff1b8,stroke:#c9a227,color:#1f2937,stroke-width:1px;
+classDef queue fill:#fff3e0,stroke:#d4a373,color:#1f2937,stroke-width:1px;
+classDef external fill:#f3e8ff,stroke:#9b8ad6,color:#1f2937,stroke-width:1px;
+
+A[User / API Client] --> B["Lambda: search-query-service<br/>- Process: search meetings, summaries, action items, related content<br/>- Output: filtered search results"]
+B --> C[(Aurora PostgreSQL)]
+B --> D[(OpenSearch Vector Index)]
+
+A --> E["Lambda: chat-rag-service<br/>- Process: retrieve transcript chunks and artifacts, build grounded answer<br/>- Output: answer with citations"]
+E --> C
+E --> D
+E --> F[Amazon Bedrock]
+
+G[EventBridge Scheduler] --> H["Lambda: status-observer-service<br/>- Process: poll external task systems, detect status changes<br/>- Output: update state and send notification event"]
+H --> C
+H --> I[SQS: notifications]
+H --> J[Jira / GitHub / Linear / Asana]
+
+I --> K["Lambda: notification-service<br/>- Process: deliver user notification<br/>- Output: email / Slack / Teams message"]
+K --> L[SES / Slack / Teams]
+K --> C
+
+class B,E,H,K service;
+class F,G aws;
+class C db;
+class D objectstore;
+class I queue;
+class J,L external;
+```
 
 ## Primary AWS Services
 
@@ -273,6 +338,7 @@ This is the main `Bedrock` consumer.
 
 ### Eventing Pattern
 
+- bind each stage queue to one Lambda consumer
 - use `SQS -> Lambda` for strict stage-by-stage media processing
 - use `SNS -> SQS -> Lambda` when one domain event must fan out to multiple consumers
 - keep one queue per downstream consumer to preserve retries, DLQs, and independent scaling
@@ -335,19 +401,21 @@ Responsibilities:
 3. `Ingestion Lambda` validates object metadata and creates a `meeting`.
 4. `Ingestion Lambda` creates a `video_items` record in `AuroraDB`.
 5. `Ingestion Lambda` sends message to `media-processing-queue`.
-6. Media service extracts audio and writes it to `S3 audio`.
-7. Media service updates `video_items.processing_status`.
-8. Media service sends message to `transcription-queue`.
-9. Transcription service starts `Amazon Transcribe`.
-10. On completion, transcript JSON is stored in `S3 transcript`.
-11. Transcription service updates transcript references on the `video_items` record.
-12. Completion event sends message to `ai-enrichment-queue`.
-13. AI service loads transcript, chunks content, and calls `Bedrock`.
-14. AI service stores summary, topics, decisions, action items, and embeddings.
-15. AI service queries vector store for related meetings.
-16. AI service updates `video_items.ai_enrichment_status`.
-17. AI service publishes `meeting.intelligence.generated` to `SNS`.
-18. `SNS` fans out to subscribed `SQS` queues such as `task-creation` and `notifications`.
+6. `media-processing-queue` triggers `Media Processing Lambda`.
+7. Media processing runs `MediaConvert` or `FFmpeg`, writes normalized audio to `S3 audio`, and updates `video_items.processing_status`.
+8. `Media Processing Lambda` sends message to `transcription-queue`.
+9. `transcription-queue` triggers `Transcription Lambda`.
+10. `Transcription Lambda` starts `Amazon Transcribe`.
+11. On completion, transcript JSON is stored in `S3 transcript`.
+12. `Transcription Lambda` updates transcript references and `video_items.transcription_status` in `AuroraDB`.
+13. `Transcription Lambda` sends message to `ai-enrichment-queue`.
+14. `ai-enrichment-queue` triggers `AI Enrichment Lambda`.
+15. `AI Enrichment Lambda` loads transcript, chunks content, and calls `Bedrock`.
+16. `AI Enrichment Lambda` stores summary, topics, decisions, action items, and embeddings.
+17. `AI Enrichment Lambda` queries vector store for related meetings.
+18. `AI Enrichment Lambda` updates `video_items.ai_enrichment_status`.
+19. `AI Enrichment Lambda` publishes `meeting.intelligence.generated` to `SNS`.
+20. `SNS` fans out to subscribed `SQS` queues such as `task-creation` and `notifications`.
 
 ### Flow D: Meeting Chat with RAG
 
@@ -363,20 +431,22 @@ Responsibilities:
 
 ### Flow B: External Task Creation
 
-1. `task-creation-queue` receives extracted action items.
-2. Integration service validates destination integration config.
-3. Service transforms item into external schema.
-4. External item is created in `Jira`, `GitHub`, `Linear`, or `Asana`.
-5. Platform stores external task ID, URL, type, status, and timestamps.
-6. Notification event is emitted.
+1. `task-creation-queue` receives extracted action items from `SNS`.
+2. `task-creation-queue` triggers `Task Orchestrator Lambda`.
+3. Task orchestration validates integration intent and transforms the item into provider-ready shape.
+4. `Task Orchestrator Lambda` invokes `Integration Lambda`.
+5. `Integration Lambda` creates the external item in `Jira`, `GitHub`, `Linear`, or `Asana`.
+6. Platform stores external task ID, URL, type, status, and timestamps.
+7. Notification event is emitted or published for downstream delivery.
 
 ### Flow C: Status Observation
 
 1. `EventBridge Scheduler` runs periodic sync for open tasks.
-2. Status observer loads open items grouped by integration.
-3. Connector calls external APIs to check latest status.
-4. Changed statuses are persisted.
-5. Notifications are sent when state changes matter.
+2. Scheduler triggers `Status Observer Lambda`.
+3. Status observer loads open items grouped by integration.
+4. Connector calls external APIs to check latest status.
+5. Changed statuses are persisted.
+6. Notifications are sent when state changes matter, either directly or via the notification queue.
 
 ## Queue Design
 
@@ -393,6 +463,15 @@ Core topics:
 
 - `meeting-intelligence-topic`
 - `task-status-events-topic`
+
+Queue bindings:
+
+- `media-processing-queue` -> `Media Processing Lambda`
+- `transcription-queue` -> `Transcription Lambda`
+- `ai-enrichment-queue` -> `AI Enrichment Lambda`
+- `task-creation-queue` -> `Task Orchestrator Lambda`
+- `notifications-queue` -> `Notification Lambda`
+- `status-sync-queue` -> `Status Observer Lambda` when queue-backed sync is used
 
 Each queue has:
 

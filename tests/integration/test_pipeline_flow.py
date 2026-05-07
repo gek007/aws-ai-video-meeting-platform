@@ -2,19 +2,24 @@ from ai_enrichment_service.service import AIEnrichmentService
 from chat_rag_service.service import ChatRAGService
 from ingestion_service.service import IngestionService
 from integration_service.service import IntegrationService
+from media_service.publisher import InMemoryQueuePublisher as MediaQueuePublisher
 from media_service.service import MediaService
 from notification_service.service import NotificationService
 from shared.repository import InMemoryRepository
 from task_orchestrator_service.service import TaskOrchestratorService
+from transcription_service.publisher import InMemoryQueuePublisher as TranscriptionQueuePublisher
 from transcription_service.service import TranscriptionService
+from ai_enrichment_service.publisher import InMemoryTopicPublisher
 
 
 class StubMetadataStore:
     def __init__(self) -> None:
         self.created = []
 
-    def create_initial_records(self, event) -> None:
-        self.created.append(event.to_dict())
+    def create_initial_records(self, event, processing_job_id: str) -> None:
+        payload = event.to_dict()
+        payload["processingJobId"] = processing_job_id
+        self.created.append(payload)
 
 
 class StubQueuePublisher:
@@ -36,9 +41,13 @@ def test_pipeline_flow_from_ingestion_to_notification():
         source="manual_upload",
     )
 
-    media_event = MediaService().process(ingestion_result.next_event | {"audioOutputBucket": "audio-bucket"})
-    transcript_event = TranscriptionService().transcribe(media_event)
-    intelligence_event = AIEnrichmentService().enrich(transcript_event | {"transcriptText": "authentication timeout action item"})
+    media_event = MediaService(publisher=MediaQueuePublisher()).process(
+        ingestion_result.next_event | {"audioOutputBucket": "audio-bucket"}
+    ).next_event
+    transcript_event = TranscriptionService(publisher=TranscriptionQueuePublisher()).transcribe(media_event).next_event
+    intelligence_event = AIEnrichmentService(publisher=InMemoryTopicPublisher()).enrich(
+        transcript_event | {"transcriptText": "authentication timeout action item"}
+    )
     task_request = TaskOrchestratorService().orchestrate(intelligence_event)
     external_task = IntegrationService().create_external_task(task_request)
     notification = NotificationService().notify({"templateName": "action_item_created"})

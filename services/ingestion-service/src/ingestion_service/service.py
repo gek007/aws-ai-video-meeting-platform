@@ -10,7 +10,7 @@ from shared.ids import new_id
 
 
 class MetadataStore(Protocol):
-    def create_initial_records(self, event: MeetingUploadedEvent) -> None: ...
+    def create_initial_records(self, event: MeetingUploadedEvent, processing_job_id: str) -> None: ...
 
 
 class QueuePublisher(Protocol):
@@ -59,7 +59,7 @@ class IngestionService:
             )
         self._idempotency_store.remember(event.idempotency_key)
 
-        self._metadata_store.create_initial_records(event)
+        self._metadata_store.create_initial_records(event, processing_job_id)
 
         next_event = {
             "eventType": "media.processing.requested",

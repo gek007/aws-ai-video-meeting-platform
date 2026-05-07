@@ -5,8 +5,10 @@ class StubMetadataStore:
     def __init__(self) -> None:
         self.created = []
 
-    def create_initial_records(self, event) -> None:
-        self.created.append(event.to_dict())
+    def create_initial_records(self, event, processing_job_id: str) -> None:
+        payload = event.to_dict()
+        payload["processingJobId"] = processing_job_id
+        self.created.append(payload)
 
 
 class StubQueuePublisher:
@@ -33,4 +35,3 @@ def test_ingest_s3_event_maps_detail_payload():
 
     assert result.next_event["rawVideo"]["bucket"] == "raw-video-bucket"
     assert metadata_store.created[0]["source"] == "manual_upload"
-

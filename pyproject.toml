@@ -19,6 +19,8 @@ dev = [
 testpaths = [
   "services",
   "apps/api/tests",
+  "libs",
+  "tests",
 ]
 addopts = [
   "--import-mode=importlib",
