@@ -10,7 +10,9 @@ Accepts normalized audio references, can submit jobs to Amazon Transcribe, persi
   Persists transcript metadata and updates `video_items.transcription_status`
 - `publisher.py`
   Sends the next event to `ai-enrichment` SQS
+- completion handling
+  Processes completed Transcribe events, persists the transcript, and publishes `meeting.transcript.ready`
 
 ## Current Limitation
 
-The service can start a real `Amazon Transcribe` job and returns `transcription.job.started`. A later iteration should add the completion callback handler that emits `meeting.transcript.ready`.
+Failed Transcribe jobs currently return `transcription.job.failed`, but retry and alerting behavior is still pending.

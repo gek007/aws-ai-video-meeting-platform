@@ -37,11 +37,11 @@ Still stubbed or partial:
 - real `Amazon Bedrock` calls
 - real `OpenSearch` vector indexing
 - real scheduled status sync and queue subscriptions in AWS infrastructure
-- real async Transcribe completion callback handler
+- real Transcribe completion event handling is implemented in `transcription-service`
 
 ## Important Runtime Notes
 
-- The current `transcription-service` can start an `Amazon Transcribe` job and returns `transcription.job.started`. A later iteration should add the completion callback handler that emits `meeting.transcript.ready`.
+- The current `transcription-service` can start an `Amazon Transcribe` job and returns `transcription.job.started`. It also handles completed Transcribe events and emits `meeting.transcript.ready`.
 - The current `ai-enrichment-service` persists structured outputs, but Bedrock-backed generation is still pending.
 - The current chat and search services are scaffolded and tested, but not yet backed by real embeddings or OpenSearch.
 

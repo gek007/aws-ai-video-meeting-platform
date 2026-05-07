@@ -1,7 +1,7 @@
 from transcription_service.publisher import InMemoryQueuePublisher
 from transcription_service.transcriber import InMemoryTranscriber, TranscriptionArtifact
 from transcription_service.store import InMemoryMetadataStore
-from transcription_service.service import TranscriptionService
+from transcription_service.service import TranscriptionCompletionService, TranscriptionService
 
 
 class SubmittedTranscriber:
@@ -101,5 +101,52 @@ def test_transcription_service_does_not_publish_ready_event_until_transcript_exi
 
     assert result["eventType"] == "transcription.job.started"
     assert result["expectedTranscript"]["key"] == "tenant_123/mtg_123/vid_123/transcript.json"
+    assert publisher.messages == []
+    assert metadata_store.records == []
+
+
+def test_transcription_completion_service_publishes_ready_event_for_completed_job():
+    publisher = InMemoryQueuePublisher()
+    metadata_store = InMemoryMetadataStore()
+
+    result = TranscriptionCompletionService(
+        publisher=publisher,
+        metadata_store=metadata_store,
+    ).complete(
+        {
+            "detail": {
+                "TranscriptionJobName": "transcribe__tenant_123__mtg_123__vid_123",
+                "TranscriptionJobStatus": "COMPLETED",
+            },
+            "transcriptOutputBucket": "transcript-bucket",
+            "correlationId": "corr_123",
+        }
+    ).next_event
+
+    assert result["eventType"] == "meeting.transcript.ready"
+    assert result["tenantId"] == "tenant_123"
+    assert result["transcript"]["key"] == "tenant_123/mtg_123/vid_123/transcript.json"
+    assert publisher.messages[0]["eventType"] == "meeting.transcript.ready"
+    assert metadata_store.records[0]["transcriptionStatus"] == "completed"
+
+
+def test_transcription_completion_service_does_not_publish_failed_job():
+    publisher = InMemoryQueuePublisher()
+    metadata_store = InMemoryMetadataStore()
+
+    result = TranscriptionCompletionService(
+        publisher=publisher,
+        metadata_store=metadata_store,
+    ).complete(
+        {
+            "detail": {
+                "TranscriptionJobName": "transcribe__tenant_123__mtg_123__vid_123",
+                "TranscriptionJobStatus": "FAILED",
+            },
+        }
+    ).next_event
+
+    assert result["eventType"] == "transcription.job.failed"
+    assert result["status"] == "FAILED"
     assert publisher.messages == []
     assert metadata_store.records == []

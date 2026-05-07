@@ -50,5 +50,6 @@ def test_amazon_transcribe_client_starts_transcription_job():
     assert request["OutputKey"] == "tenant_123/mtg_123/vid_123/transcript.json"
     assert request["Settings"]["ShowSpeakerLabels"] is True
     assert request["ContentRedaction"]["RedactionType"] == "PII"
+    assert request["TranscriptionJobName"] == "transcribe__tenant_123__mtg_123__vid_123"
     assert artifact.provider == "amazon-transcribe"
     assert artifact.is_ready is False

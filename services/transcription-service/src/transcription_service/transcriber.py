@@ -69,7 +69,7 @@ class AmazonTranscribeClient:
     ) -> TranscriptionArtifact:
         del transcript_bucket
 
-        job_name = f"transcribe-{tenant_id}-{meeting_id}-{video_item_id}".replace("_", "-")
+        job_name = f"transcribe__{tenant_id}__{meeting_id}__{video_item_id}"
         transcript_key = f"{tenant_id}/{meeting_id}/{video_item_id}/transcript.json"
         settings = {}
         content_redaction = None

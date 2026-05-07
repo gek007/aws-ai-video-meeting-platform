@@ -112,12 +112,12 @@ Still planned:
 - real media conversion through `MediaConvert` or `FFmpeg`
 - real `Amazon Bedrock` inference
 - real `OpenSearch` vector indexing
-- true async `Amazon Transcribe` completion callback handler
+- richer retry and alerting behavior for failed Transcribe jobs
 - full AWS infrastructure provisioning and subscriptions
 
 Important current limitation:
 
-- `transcription-service` can submit a real `Amazon Transcribe` job and now returns `transcription.job.started`. The completion callback handler that emits `meeting.transcript.ready` is still pending.
+- `transcription-service` can submit a real `Amazon Transcribe` job and returns `transcription.job.started`. It also handles completed Transcribe events and emits `meeting.transcript.ready`.
 
 ## Architecture Overview
 
@@ -231,7 +231,7 @@ Current code note:
 
 - the diagram shows the intended steady-state flow
 - the current implementation already persists state and sends the queue or SNS messages shown here
-- `Amazon Transcribe` job submission is integrated, but the completion callback handler is still pending
+- `Amazon Transcribe` job submission and completion event handling are integrated
 - `Amazon Bedrock`, vector indexing, and real media conversion remain planned
 
 ## Query, Chat, And Observation Flows
