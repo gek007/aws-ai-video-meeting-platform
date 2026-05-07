@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+from contracts.validation import require_keys
 from shared.events import base_event
 
 
@@ -34,6 +35,7 @@ class MediaService:
         self._metadata_store = metadata_store
 
     def process(self, event: dict) -> MediaProcessingResult:
+        require_keys(event, ["rawVideo", "tenantId", "meetingId", "videoItemId", "correlationId"])
         raw_video = event["rawVideo"]
         output_bucket = event.get("audioOutputBucket", "audio-bucket")
         output_key = f'{event["tenantId"]}/{event["meetingId"]}/{event["videoItemId"]}/audio.wav'

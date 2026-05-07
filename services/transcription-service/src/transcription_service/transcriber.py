@@ -15,6 +15,8 @@ class TranscriptionArtifact:
     job_name: str
     provider: str
     is_ready: bool
+    speaker_count: int | None = None
+    confidence_score: float | None = None
 
 
 class InMemoryTranscriber:
@@ -53,6 +55,7 @@ class AmazonTranscribeClient:
         if not self._output_bucket:
             raise ValueError("TRANSCRIBE_OUTPUT_BUCKET is required for AmazonTranscribeClient.")
         self._client_factory = client_factory
+        self._cached_client: object | None = None
 
     def transcribe(
         self,
@@ -110,9 +113,11 @@ class AmazonTranscribeClient:
 
     @property
     def _client(self):
-        if self._client_factory is not None:
-            return self._client_factory()
+        if self._cached_client is None:
+            if self._client_factory is not None:
+                self._cached_client = self._client_factory()
+            else:
+                import boto3
 
-        import boto3
-
-        return boto3.client("transcribe")
+                self._cached_client = boto3.client("transcribe")
+        return self._cached_client

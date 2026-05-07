@@ -9,6 +9,7 @@ from typing import Callable
 class DeliveryResult:
     provider: str
     delivery_id: str
+    status: str = "sent"
 
 
 @dataclass(slots=True)
@@ -46,6 +47,7 @@ class SESNotificationSender:
         if not self._source_email:
             raise ValueError("SES_SOURCE_EMAIL is required for SESNotificationSender.")
         self._client_factory = client_factory
+        self._cached_client: object | None = None
 
     def send(
         self,
@@ -70,9 +72,11 @@ class SESNotificationSender:
 
     @property
     def _client(self):
-        if self._client_factory is not None:
-            return self._client_factory()
+        if self._cached_client is None:
+            if self._client_factory is not None:
+                self._cached_client = self._client_factory()
+            else:
+                import boto3
 
-        import boto3
-
-        return boto3.client("ses")
+                self._cached_client = boto3.client("ses")
+        return self._cached_client

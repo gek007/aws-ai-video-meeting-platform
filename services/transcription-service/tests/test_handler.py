@@ -1,3 +1,5 @@
+import json
+
 from transcription_service.handler import lambda_handler
 
 
@@ -15,5 +17,6 @@ def test_transcription_handler_returns_transcript_ready():
         },
         None,
     )
-    assert response["body"]["nextEvent"]["eventType"] == "meeting.transcript.ready"
-    assert response["body"]["nextEvent"]["transcript"]["key"] == "tenant_123/mtg_123/vid_123/transcript.json"
+    body = json.loads(response["body"])
+    assert body["nextEvent"]["eventType"] == "meeting.transcript.ready"
+    assert body["nextEvent"]["transcript"]["key"] == "tenant_123/mtg_123/vid_123/transcript.json"

@@ -1,3 +1,5 @@
+import json
+
 from ingestion_service.handler import lambda_handler
 from ingestion_service.service import IngestionService
 
@@ -52,6 +54,7 @@ def test_lambda_handler_returns_accepted_response():
     response = lambda_handler(event, None)
 
     assert response["statusCode"] == 202
-    assert response["body"]["message"] == "Video accepted for processing."
-    assert response["body"]["meetingId"].startswith("mtg_")
-    assert response["body"]["videoItemId"].startswith("vid_")
+    body = json.loads(response["body"])
+    assert body["message"] == "Video accepted for processing."
+    assert body["meetingId"].startswith("mtg_")
+    assert body["videoItemId"].startswith("vid_")

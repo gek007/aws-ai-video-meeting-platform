@@ -1,3 +1,5 @@
+import json
+
 from task_orchestrator_service.handler import lambda_handler
 
 
@@ -11,5 +13,5 @@ def test_task_orchestrator_returns_creation_request():
         },
         None,
     )
-    assert response["body"]["nextEvent"]["eventType"] == "task.creation.requested"
-
+    body = json.loads(response["body"])
+    assert body["nextEvent"]["eventType"] == "task.creation.requested"

@@ -48,7 +48,7 @@ class IngestionService:
             source=source,
             raw_video=RawVideoLocation(bucket=bucket, key=key),
             correlation_id=correlation_id,
-            idempotency_key=f"{tenant_id}:{video_item_id}:meeting.uploaded",
+            idempotency_key=f"{tenant_id}:{bucket}:{key}:meeting.uploaded",
         )
         if self._idempotency_store.seen(event.idempotency_key):
             return IngestionResult(

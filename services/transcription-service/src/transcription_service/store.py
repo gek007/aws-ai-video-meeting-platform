@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
-from typing import Callable
 
+from shared.aurora import AuroraBaseStore
 from shared.ids import new_id
 
 
@@ -22,6 +21,8 @@ class InMemoryMetadataStore:
         language_code: str,
         speaker_diarization: bool,
         pii_redaction: bool,
+        speaker_count: int | None = None,
+        confidence_score: float | None = None,
     ) -> None:
         self.records.append(
             {
@@ -33,17 +34,16 @@ class InMemoryMetadataStore:
                 "languageCode": language_code,
                 "speakerDiarization": speaker_diarization,
                 "piiRedaction": pii_redaction,
+                "speakerCount": speaker_count,
+                "confidenceScore": confidence_score,
                 "transcriptionStatus": "completed",
             }
         )
 
 
-class AuroraTranscriptionStore:
-    def __init__(self, dsn: str | None = None, connection_factory: Callable[[], object] | None = None) -> None:
-        self._dsn = dsn or os.getenv("AURORA_DATABASE_URL") or os.getenv("DATABASE_URL")
-        if not self._dsn and connection_factory is None:
-            raise ValueError("AURORA_DATABASE_URL or DATABASE_URL is required for AuroraTranscriptionStore.")
-        self._connection_factory = connection_factory
+class AuroraTranscriptionStore(AuroraBaseStore):
+    def __init__(self, dsn: str | None = None, connection_factory=None) -> None:
+        super().__init__(dsn, connection_factory, store_name="AuroraTranscriptionStore")
 
     def record_transcript(
         self,
@@ -56,6 +56,8 @@ class AuroraTranscriptionStore:
         language_code: str,
         speaker_diarization: bool,
         pii_redaction: bool,
+        speaker_count: int | None = None,
+        confidence_score: float | None = None,
     ) -> None:
         with self._connect() as connection:
             with connection.cursor() as cursor:
@@ -74,8 +76,8 @@ class AuroraTranscriptionStore:
                         tenant_id,
                         language_code,
                         transcript_key,
-                        2 if speaker_diarization else None,
-                        0.95,
+                        speaker_count,
+                        confidence_score,
                         pii_redaction,
                     ),
                 )
@@ -98,10 +100,3 @@ class AuroraTranscriptionStore:
                 )
             connection.commit()
 
-    def _connect(self):
-        if self._connection_factory is not None:
-            return self._connection_factory()
-
-        import psycopg
-
-        return psycopg.connect(self._dsn)
