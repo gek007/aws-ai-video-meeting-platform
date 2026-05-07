@@ -4,11 +4,13 @@ from ingestion_service.service import IngestionService
 from integration_service.service import IntegrationService
 from media_service.publisher import InMemoryQueuePublisher as MediaQueuePublisher
 from media_service.service import MediaService
+from media_service.store import InMemoryMetadataStore as MediaMetadataStore
 from notification_service.service import NotificationService
 from shared.repository import InMemoryRepository
 from task_orchestrator_service.service import TaskOrchestratorService
 from transcription_service.publisher import InMemoryQueuePublisher as TranscriptionQueuePublisher
 from transcription_service.service import TranscriptionService
+from transcription_service.store import InMemoryMetadataStore as TranscriptionMetadataStore
 from ai_enrichment_service.publisher import InMemoryTopicPublisher
 
 
@@ -41,10 +43,16 @@ def test_pipeline_flow_from_ingestion_to_notification():
         source="manual_upload",
     )
 
-    media_event = MediaService(publisher=MediaQueuePublisher()).process(
+    media_event = MediaService(
+        publisher=MediaQueuePublisher(),
+        metadata_store=MediaMetadataStore(),
+    ).process(
         ingestion_result.next_event | {"audioOutputBucket": "audio-bucket"}
     ).next_event
-    transcript_event = TranscriptionService(publisher=TranscriptionQueuePublisher()).transcribe(media_event).next_event
+    transcript_event = TranscriptionService(
+        publisher=TranscriptionQueuePublisher(),
+        metadata_store=TranscriptionMetadataStore(),
+    ).transcribe(media_event).next_event
     intelligence_event = AIEnrichmentService(publisher=InMemoryTopicPublisher()).enrich(
         transcript_event | {"transcriptText": "authentication timeout action item"}
     )

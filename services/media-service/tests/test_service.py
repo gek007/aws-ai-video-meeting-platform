@@ -1,10 +1,12 @@
 from media_service.publisher import InMemoryQueuePublisher
+from media_service.store import InMemoryMetadataStore
 from media_service.service import MediaService
 
 
 def test_media_service_builds_audio_reference():
     publisher = InMemoryQueuePublisher()
-    result = MediaService(publisher=publisher).process(
+    metadata_store = InMemoryMetadataStore()
+    result = MediaService(publisher=publisher, metadata_store=metadata_store).process(
         {
             "tenantId": "tenant_123",
             "meetingId": "mtg_123",
@@ -26,11 +28,13 @@ def test_media_service_builds_audio_reference():
     assert result["sourceVideo"]["bucket"] == "raw-video-bucket"
     assert result["conversion"]["engine"] == "mediaconvert"
     assert publisher.messages[0]["eventType"] == "transcription.requested"
+    assert metadata_store.updates[0]["audioKey"] == "tenant_123/mtg_123/vid_123/audio.wav"
 
 
 def test_media_service_allows_custom_output_bucket_and_engine():
     publisher = InMemoryQueuePublisher()
-    result = MediaService(publisher=publisher).process(
+    metadata_store = InMemoryMetadataStore()
+    result = MediaService(publisher=publisher, metadata_store=metadata_store).process(
         {
             "tenantId": "tenant_123",
             "meetingId": "mtg_123",
@@ -47,11 +51,13 @@ def test_media_service_allows_custom_output_bucket_and_engine():
 
     assert result["audio"]["bucket"] == "custom-audio-bucket"
     assert result["conversion"]["engine"] == "ffmpeg"
+    assert metadata_store.updates[0]["conversionEngine"] == "ffmpeg"
 
 
 def test_media_service_publishes_to_queue_publisher():
     publisher = InMemoryQueuePublisher()
-    MediaService(publisher=publisher).process(
+    metadata_store = InMemoryMetadataStore()
+    MediaService(publisher=publisher, metadata_store=metadata_store).process(
         {
             "tenantId": "tenant_123",
             "meetingId": "mtg_123",
@@ -66,3 +72,4 @@ def test_media_service_publishes_to_queue_publisher():
 
     assert len(publisher.messages) == 1
     assert publisher.messages[0]["audio"]["key"] == "tenant_123/mtg_123/vid_123/audio.wav"
+    assert metadata_store.updates[0]["processingStatus"] == "completed"
