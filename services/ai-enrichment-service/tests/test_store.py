@@ -4,9 +4,13 @@ from ai_enrichment_service.store import AuroraAIEnrichmentStore, InMemoryMetadat
 class StubCursor:
     def __init__(self) -> None:
         self.statements: list[tuple[str, tuple]] = []
+        self._fetchone_result = None
 
     def execute(self, sql: str, params: tuple) -> None:
         self.statements.append((sql, params))
+
+    def fetchone(self):
+        return self._fetchone_result
 
     def __enter__(self):
         return self
@@ -67,13 +71,15 @@ def test_aurora_ai_store_persists_summary_topics_decisions_actions_and_chunks():
         prompt_version="v1",
     )
 
-    assert len(connection.cursor_obj.statements) == 7
-    assert "INSERT INTO summaries" in connection.cursor_obj.statements[0][0]
-    assert "INSERT INTO topics" in connection.cursor_obj.statements[1][0]
-    assert "INSERT INTO topics" in connection.cursor_obj.statements[2][0]
-    assert "INSERT INTO decisions" in connection.cursor_obj.statements[3][0]
-    assert "INSERT INTO action_items" in connection.cursor_obj.statements[4][0]
-    assert connection.cursor_obj.statements[4][1][0] == "act_known"
-    assert "INSERT INTO transcript_chunks" in connection.cursor_obj.statements[5][0]
-    assert "UPDATE video_items" in connection.cursor_obj.statements[6][0]
+    stmts = connection.cursor_obj.statements
+    assert len(stmts) == 8  # SELECT (idempotency) + 7 writes
+    assert "SELECT" in stmts[0][0]
+    assert "INSERT INTO summaries" in stmts[1][0]
+    assert "INSERT INTO topics" in stmts[2][0]
+    assert "INSERT INTO topics" in stmts[3][0]
+    assert "INSERT INTO decisions" in stmts[4][0]
+    assert "INSERT INTO action_items" in stmts[5][0]
+    assert stmts[5][1][0] == "act_known"
+    assert "INSERT INTO transcript_chunks" in stmts[6][0]
+    assert "UPDATE video_items" in stmts[7][0]
     assert connection.committed is True

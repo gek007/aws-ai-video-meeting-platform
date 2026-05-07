@@ -21,10 +21,13 @@ class AuroraBaseStore:
 
     @contextmanager
     def _connect(self):
-        import psycopg
-
-        conn = self._connection_factory() if self._connection_factory is not None else psycopg.connect(self._dsn)
+        if self._connection_factory is not None:
+            conn = self._connection_factory()
+        else:
+            import psycopg
+            conn = psycopg.connect(self._dsn)
         try:
             yield conn
         finally:
-            conn.close()
+            if hasattr(conn, "close"):
+                conn.close()
