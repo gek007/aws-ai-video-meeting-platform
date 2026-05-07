@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import asdict
 from typing import Protocol
 
@@ -54,6 +55,11 @@ class AIEnrichmentService:
         require_keys(payload, ["summary", "topics", "actionItems"])
 
     def enrich(self, event: dict) -> dict:
+        if not os.getenv("AI_ENRICHMENT_STUB"):
+            raise NotImplementedError(
+                "Real AI enrichment is not yet implemented. "
+                "Set AI_ENRICHMENT_STUB=true to run with placeholder data in development/testing only."
+            )
         transcript_text = event.get(
             "transcriptText",
             "Authentication issue discussion with decisions and action items.",

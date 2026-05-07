@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from contracts.validation import require_keys
 from shared.ids import new_id
 
 
 class TaskOrchestratorService:
     def orchestrate(self, event: dict) -> dict:
+        require_keys(event, ["tenantId", "meetingId", "videoItemId"])
         items = []
         for item in event.get("actionItems", []):
             enriched_item = dict(item)

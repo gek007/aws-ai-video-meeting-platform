@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+from contracts.validation import require_keys
 from shared.events import base_event
 from transcription_service.transcriber import TranscriptionArtifact
 
@@ -39,6 +40,8 @@ class MetadataStore(Protocol):
         language_code: str,
         speaker_diarization: bool,
         pii_redaction: bool,
+        speaker_count: int | None,
+        confidence_score: float | None,
     ) -> None: ...
 
 
@@ -54,6 +57,7 @@ class TranscriptionService:
         self._transcriber = transcriber
 
     def transcribe(self, event: dict) -> TranscriptionResult:
+        require_keys(event, ["audio", "tenantId", "meetingId", "videoItemId", "correlationId"])
         audio = event["audio"]
         transcript_bucket = event.get("transcriptOutputBucket", "transcript-bucket")
         language_code = event.get("languageCode", "en-US")
@@ -114,6 +118,8 @@ class TranscriptionService:
             language_code=artifact.language_code,
             speaker_diarization=artifact.speaker_diarization,
             pii_redaction=artifact.pii_redaction,
+            speaker_count=artifact.speaker_count,
+            confidence_score=artifact.confidence_score,
         )
         self._publisher.publish_ai_enrichment(next_event)
         return TranscriptionResult(next_event=next_event)
@@ -165,6 +171,8 @@ class TranscriptionCompletionService:
             language_code=transcript["language"],
             speaker_diarization=transcript["speakerDiarization"],
             pii_redaction=transcript["piiRedaction"],
+            speaker_count=transcript.get("speakerCount"),
+            confidence_score=transcript.get("confidenceScore"),
         )
         self._publisher.publish_ai_enrichment(next_event)
         return TranscriptionResult(next_event=next_event)

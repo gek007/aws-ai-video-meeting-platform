@@ -65,7 +65,7 @@ class NotificationService:
             "channel": channel,
             "recipient": recipient,
             "templateName": template_name,
-            "status": "sent",
+            "status": delivery.status,
             "message": message,
             "subject": subject,
             "provider": delivery.provider,

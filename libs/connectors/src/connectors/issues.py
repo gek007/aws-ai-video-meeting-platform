@@ -25,10 +25,11 @@ class IssueConnector:
 class JiraConnector(IssueConnector):
     def create_issue(self, *, provider: str, title: str, description: str) -> CreatedIssue:
         created = super().create_issue(provider="jira", title=title, description=description)
+        external_id = "JIRA-101"
         return CreatedIssue(
             provider=created.provider,
-            external_id="JIRA-101",
-            external_url=f"https://jira.example.com/browse/{created.external_id}",
+            external_id=external_id,
+            external_url=f"https://jira.example.com/browse/{external_id}",
             status=created.status,
         )
 

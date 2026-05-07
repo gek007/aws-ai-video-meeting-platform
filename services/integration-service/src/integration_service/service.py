@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Callable, Protocol
 
 from connectors.issues import GitHubIssuesConnector, IssueConnector, JiraConnector
 
@@ -19,14 +19,18 @@ class MetadataStore(Protocol):
 
 
 class IntegrationService:
-    def __init__(self, connector: IssueConnector | None = None, metadata_store: MetadataStore | None = None) -> None:
-        self._connector = connector or IssueConnector()
+    def __init__(
+        self,
+        metadata_store: MetadataStore | None = None,
+        connector_factory: Callable[[str], IssueConnector] | None = None,
+    ) -> None:
         self._metadata_store = metadata_store
+        self._connector_factory = connector_factory or self._default_connector_factory
 
     def create_external_task(self, event: dict) -> dict:
         item = event["items"][0]
         provider = event.get("provider", "jira")
-        connector = self._resolve_connector(provider)
+        connector = self._connector_factory(provider)
         created = connector.create_issue(
             provider=provider,
             title=item["title"],
@@ -50,9 +54,10 @@ class IntegrationService:
             "status": created.status,
         }
 
-    def _resolve_connector(self, provider: str) -> IssueConnector:
+    @staticmethod
+    def _default_connector_factory(provider: str) -> IssueConnector:
         if provider == "jira":
             return JiraConnector()
         if provider == "github":
             return GitHubIssuesConnector()
-        return self._connector
+        return IssueConnector()

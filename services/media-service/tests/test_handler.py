@@ -1,3 +1,5 @@
+import json
+
 from media_service.handler import lambda_handler
 
 
@@ -16,5 +18,6 @@ def test_media_handler_returns_transcription_request():
         None,
     )
     assert response["statusCode"] == 202
-    assert response["body"]["nextEvent"]["eventType"] == "transcription.requested"
-    assert response["body"]["nextEvent"]["audio"]["key"] == "tenant_123/mtg_123/vid_123/audio.wav"
+    body = json.loads(response["body"])
+    assert body["nextEvent"]["eventType"] == "transcription.requested"
+    assert body["nextEvent"]["audio"]["key"] == "tenant_123/mtg_123/vid_123/audio.wav"
