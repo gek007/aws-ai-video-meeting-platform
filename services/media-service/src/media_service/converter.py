@@ -85,26 +85,32 @@ class FFmpegSubprocessConverter:
     ) -> ConversionArtifact:
         tmp_input = f"/tmp/{uuid.uuid4()}_input"
         tmp_output = f"/tmp/{uuid.uuid4()}.wav"
+        try:
+            self._s3.download_file(source_bucket, source_key, tmp_input)
 
-        self._s3.download_file(source_bucket, source_key, tmp_input)
+            subprocess.run(
+                [
+                    self._ffmpeg_path,
+                    "-y",
+                    "-i", tmp_input,
+                    "-acodec", "pcm_s16le",
+                    "-ar", "16000",
+                    "-ac", "1",
+                    "-vn",
+                    tmp_output,
+                ],
+                check=True,
+                timeout=600,
+                capture_output=True,
+            )
 
-        subprocess.run(
-            [
-                self._ffmpeg_path,
-                "-y",
-                "-i", tmp_input,
-                "-acodec", "pcm_s16le",
-                "-ar", "16000",
-                "-ac", "1",
-                "-vn",
-                tmp_output,
-            ],
-            check=True,
-            timeout=600,
-            capture_output=True,
-        )
-
-        self._s3.upload_file(tmp_output, output_bucket, output_key)
+            self._s3.upload_file(tmp_output, output_bucket, output_key)
+        finally:
+            for path in (tmp_input, tmp_output):
+                try:
+                    os.unlink(path)
+                except FileNotFoundError:
+                    pass
 
         return ConversionArtifact(
             audio_bucket=output_bucket,
@@ -142,6 +148,7 @@ class MediaConvertAdapter:
         if not self._role_arn and client_factory is None:
             raise ValueError("MEDIACONVERT_ROLE_ARN is required for MediaConvertAdapter.")
         self._client_factory = client_factory
+        self._cached_client: object | None = None
 
     def convert(
         self,
@@ -236,11 +243,13 @@ class MediaConvertAdapter:
 
     @property
     def _client(self):
-        if self._client_factory is not None:
-            return self._client_factory()
-        import boto3
-        if not self._endpoint_url:
-            mc = boto3.client("mediaconvert", region_name=os.getenv("AWS_REGION", "us-east-1"))
-            response = mc.describe_endpoints(Mode="DEFAULT")
-            self._endpoint_url = response["Endpoints"][0]["Url"]
-        return boto3.client("mediaconvert", endpoint_url=self._endpoint_url)
+        if self._cached_client is None:
+            if self._client_factory is not None:
+                self._cached_client = self._client_factory()
+            else:
+                import boto3
+                if not self._endpoint_url:
+                    mc = boto3.client("mediaconvert", region_name=os.getenv("AWS_REGION", "us-east-1"))
+                    self._endpoint_url = mc.describe_endpoints(Mode="DEFAULT")["Endpoints"][0]["Url"]
+                self._cached_client = boto3.client("mediaconvert", endpoint_url=self._endpoint_url)
+        return self._cached_client

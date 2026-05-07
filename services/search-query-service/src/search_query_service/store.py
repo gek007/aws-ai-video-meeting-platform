@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
-from typing import Callable
+
+from shared.aurora import AuroraBaseStore
 
 
 @dataclass(slots=True)
@@ -43,18 +43,22 @@ class InMemorySearchStore:
                 score_map[mid] = score_map.get(mid, 0.0) + 1.0
 
         return sorted(
-            [{"meetingId": mid, "score": score / len(source_topics)} for mid, score in score_map.items()],
+            [
+                {
+                    "meetingId": mid,
+                    "sharedTopics": int(count),
+                    "score": count / len(source_topics),
+                }
+                for mid, count in score_map.items()
+            ],
             key=lambda x: x["score"],
             reverse=True,
         )[:limit]
 
 
-class AuroraSearchStore:
-    def __init__(self, dsn: str | None = None, connection_factory: Callable[[], object] | None = None) -> None:
-        self._dsn = dsn or os.getenv("AURORA_DATABASE_URL") or os.getenv("DATABASE_URL")
-        if not self._dsn and connection_factory is None:
-            raise ValueError("AURORA_DATABASE_URL or DATABASE_URL is required for AuroraSearchStore.")
-        self._connection_factory = connection_factory
+class AuroraSearchStore(AuroraBaseStore):
+    def __init__(self, dsn: str | None = None, connection_factory=None) -> None:
+        super().__init__(dsn, connection_factory, store_name="AuroraSearchStore")
 
     def search_meetings(self, *, tenant_id: str, query: str, limit: int = 20) -> list[dict]:
         with self._connect() as conn:
@@ -118,9 +122,3 @@ class AuroraSearchStore:
                     {"meetingId": row[0], "sharedTopics": row[1], "score": float(row[2] or 0)}
                     for row in rows
                 ]
-
-    def _connect(self):
-        if self._connection_factory is not None:
-            return self._connection_factory()
-        import psycopg
-        return psycopg.connect(self._dsn)

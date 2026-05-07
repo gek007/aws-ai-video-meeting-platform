@@ -56,6 +56,7 @@ def test_inmemory_related_meetings_scores_by_shared_topics():
     assert len(results) == 1
     assert results[0]["meetingId"] == "mtg_003"
     assert results[0]["score"] == 1.0  # both budget+planning shared out of 2 source topics
+    assert results[0]["sharedTopics"] == 2
 
 
 def test_inmemory_related_meetings_returns_empty_when_no_topics():

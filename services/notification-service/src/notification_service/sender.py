@@ -132,8 +132,7 @@ class SlackWebhookSender:
         with urllib.request.urlopen(req, timeout=10) as resp:
             body = resp.read().decode()
             try:
-                import json as _json
-                return _json.loads(body)
+                return json.loads(body)
             except Exception:
                 return {}
 

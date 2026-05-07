@@ -58,6 +58,7 @@ class S3PresignedUploader:
         if not self._bucket and client_factory is None:
             raise ValueError("RAW_VIDEO_BUCKET is required for S3PresignedUploader.")
         self._client_factory = client_factory
+        self._cached_client: object | None = None
 
     def create_upload_session(
         self,
@@ -99,7 +100,10 @@ class S3PresignedUploader:
 
     @property
     def _client(self):
-        if self._client_factory is not None:
-            return self._client_factory()
-        import boto3
-        return boto3.client("s3")
+        if self._cached_client is None:
+            if self._client_factory is not None:
+                self._cached_client = self._client_factory()
+            else:
+                import boto3
+                self._cached_client = boto3.client("s3")
+        return self._cached_client
