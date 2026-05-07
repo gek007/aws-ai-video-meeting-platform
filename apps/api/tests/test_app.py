@@ -30,7 +30,11 @@ def test_chat_question():
 def test_upload_init():
     result = init_upload("demo.mp4", "tenant_demo")
     assert result["method"] == "PUT"
-    assert "tenant_demo/demo.mp4" in result["uploadUrl"]
+    assert result["meetingId"].startswith("mtg_")
+    assert result["videoItemId"].startswith("vid_")
+    assert "tenant_demo" in result["s3Key"]
+    assert "demo.mp4" in result["s3Key"]
+    assert result["expiresIn"] == 3600
 
 
 def test_get_meeting_and_summary():

@@ -105,12 +105,12 @@ Implemented now:
 - SNS publisher for AI enrichment fan-out
 - `Amazon Transcribe` job submission adapter
 - `Amazon SES` sender adapter
+- `Amazon Bedrock` enrichment adapter
 - in-memory fallbacks for local development and tests
 
 Still planned:
 
 - real media conversion through `MediaConvert` or `FFmpeg`
-- real `Amazon Bedrock` inference
 - real `OpenSearch` vector indexing
 - richer retry and alerting behavior for failed Transcribe jobs
 - full AWS infrastructure provisioning and subscriptions
@@ -232,7 +232,7 @@ Current code note:
 - the diagram shows the intended steady-state flow
 - the current implementation already persists state and sends the queue or SNS messages shown here
 - `Amazon Transcribe` job submission and completion event handling are integrated
-- `Amazon Bedrock`, vector indexing, and real media conversion remain planned
+- vector indexing and real media conversion remain planned
 
 ## Query, Chat, And Observation Flows
 
@@ -374,7 +374,7 @@ This is the main `Bedrock` consumer.
 Current code note:
 
 - persistence and SNS publish are implemented
-- real `Bedrock` inference is still pending
+- `Bedrock` enrichment is wired through a runtime adapter when `BEDROCK_MODEL_ID` is configured
 
 ### Eventing Pattern
 
@@ -451,7 +451,7 @@ Responsibilities:
 13. `Transcription Lambda` updates transcript references and `video_items.transcription_status` in `AuroraDB`.
 14. `Transcription Lambda` sends message to `ai-enrichment-queue`.
 15. `ai-enrichment-queue` triggers `AI Enrichment Lambda`.
-16. `AI Enrichment Lambda` loads transcript, chunks content, and in the target flow calls `Bedrock`.
+16. `AI Enrichment Lambda` loads transcript, chunks content, and calls `Bedrock` when configured.
 17. `AI Enrichment Lambda` stores summary, topics, decisions, action items, and embeddings metadata.
 18. `AI Enrichment Lambda` queries vector store for related meetings in the target flow.
 19. `AI Enrichment Lambda` updates `video_items.ai_enrichment_status`.

@@ -1,4 +1,5 @@
 from ai_enrichment_service.service import AIEnrichmentService
+from ai_enrichment_service.generator import DeterministicEnrichmentGenerator
 from chat_rag_service.service import ChatRAGService
 from ingestion_service.service import IngestionService
 from integration_service.service import IntegrationService
@@ -50,9 +51,11 @@ def test_pipeline_flow_from_ingestion_to_notification():
         source="manual_upload",
     )
 
+    from media_service.converter import InMemoryConverter
     media_event = MediaService(
         publisher=MediaQueuePublisher(),
         metadata_store=MediaMetadataStore(),
+        converter=InMemoryConverter(),
     ).process(
         ingestion_result.next_event | {"audioOutputBucket": "audio-bucket"}
     ).next_event
@@ -64,6 +67,7 @@ def test_pipeline_flow_from_ingestion_to_notification():
     intelligence_event = AIEnrichmentService(
         publisher=InMemoryTopicPublisher(),
         metadata_store=AIEnrichmentMetadataStore(),
+        generator=DeterministicEnrichmentGenerator(),
     ).enrich(
         transcript_event | {"transcriptText": "authentication timeout action item"}
     )
@@ -84,15 +88,30 @@ def test_pipeline_flow_from_ingestion_to_notification():
 
 
 def test_rag_flow_returns_citations_for_known_meeting():
-    result = ChatRAGService(InMemoryRepository()).answer("What was decided?", "mtg_123", tenant_id="tenant_demo")
+    from chat_rag_service.retriever import InMemoryRetriever
+
+    chunks = [
+        {
+            "chunkId": "chunk_001",
+            "meetingId": "mtg_123",
+            "tenantId": "tenant_demo",
+            "videoItemId": "vid_123",
+            "chunkText": "Login timeout fix was decided.",
+            "score": 0.95,
+        }
+    ]
+    retriever = InMemoryRetriever(chunks=chunks)
+    result = ChatRAGService(retriever=retriever).answer("What was decided?", "mtg_123", tenant_id="tenant_demo")
     assert result["meetingId"] == "mtg_123"
     assert len(result["citations"]) >= 1
 
 
 def test_status_observer_flow_updates_external_task_status():
-    status_event = StatusObserverService(
-        metadata_store=StatusObserverMetadataStore()
-    ).sync(
+    store = StatusObserverMetadataStore()
+    # Seed a prior status so the change can be detected.
+    store.record_task_status(tenant_id="tenant_demo", provider="jira", external_id="JIRA-101", status="OPEN")
+
+    status_event = StatusObserverService(metadata_store=store).sync(
         {
             "tenantId": "tenant_demo",
             "provider": "jira",

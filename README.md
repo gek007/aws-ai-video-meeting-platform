@@ -34,7 +34,7 @@ Implemented with in-memory fallbacks for local tests:
 Still stubbed or partial:
 
 - real video-to-audio conversion
-- real `Amazon Bedrock` calls
+- real `Amazon Bedrock` calls for AI enrichment are wired
 - real `OpenSearch` vector indexing
 - real scheduled status sync and queue subscriptions in AWS infrastructure
 - real Transcribe completion event handling is implemented in `transcription-service`
@@ -42,7 +42,7 @@ Still stubbed or partial:
 ## Important Runtime Notes
 
 - The current `transcription-service` can start an `Amazon Transcribe` job and returns `transcription.job.started`. It also handles completed Transcribe events and emits `meeting.transcript.ready`.
-- The current `ai-enrichment-service` persists structured outputs, but Bedrock-backed generation is still pending.
+- The current `ai-enrichment-service` can call `Amazon Bedrock` when `BEDROCK_MODEL_ID` is configured, and otherwise uses deterministic local generation.
 - The current chat and search services are scaffolded and tested, but not yet backed by real embeddings or OpenSearch.
 
 ## Repository Structure

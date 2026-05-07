@@ -1,52 +1,49 @@
 from __future__ import annotations
 
-from shared.repository import InMemoryRepository
+from typing import Protocol
+
+from chat_rag_service.answerer import AnswerResult, InMemoryAnswerer
+from chat_rag_service.retriever import InMemoryRetriever, RetrievedChunk
+
+
+class Retriever(Protocol):
+    def retrieve(
+        self,
+        *,
+        question: str,
+        meeting_id: str,
+        tenant_id: str,
+        top_k: int,
+    ) -> list[RetrievedChunk]: ...
+
+
+class Answerer(Protocol):
+    def answer(self, *, question: str, chunks: list[RetrievedChunk], context: dict) -> AnswerResult: ...
 
 
 class ChatRAGService:
-    def __init__(self, repository: InMemoryRepository | None = None) -> None:
-        self._repository = repository or InMemoryRepository()
+    def __init__(
+        self,
+        retriever: Retriever | None = None,
+        answerer: Answerer | None = None,
+    ) -> None:
+        self._retriever = retriever or InMemoryRetriever()
+        self._answerer = answerer or InMemoryAnswerer()
 
     def answer(self, question: str, meeting_id: str, tenant_id: str = "tenant_demo") -> dict:
-        meeting = self._repository.get_meeting(meeting_id)
-        if not meeting or meeting["tenantId"] != tenant_id:
-            return {
-                "meetingId": meeting_id,
-                "answer": "Not enough information is available for this meeting.",
-                "citations": [],
-                "confidence": "low",
-            }
-
-        summary = self._repository.get_summary(meeting_id)
-        action_items = self._repository.get_action_items(meeting_id)
-        if not summary:
-            return {
-                "meetingId": meeting_id,
-                "answer": "Not enough information is available for this meeting.",
-                "citations": [],
-                "confidence": "low",
-            }
-
+        chunks = self._retriever.retrieve(
+            question=question,
+            meeting_id=meeting_id,
+            tenant_id=tenant_id,
+            top_k=5,
+        )
+        context = {"meetingId": meeting_id, "tenantId": tenant_id}
+        result = self._answerer.answer(question=question, chunks=chunks, context=context)
         return {
             "meetingId": meeting_id,
-            "answer": f"{summary['summary']} Question answered: {question}",
-            "citations": [
-                {
-                    "type": "transcript_chunk",
-                    "chunkId": "chunk_001",
-                    "startOffsetSeconds": 120,
-                    "endOffsetSeconds": 155,
-                }
-            ]
-            + (
-                [
-                    {
-                        "type": "action_item",
-                        "actionItemId": action_items[0]["id"],
-                    }
-                ]
-                if action_items
-                else []
-            ),
-            "confidence": "medium" if action_items else "low",
+            "question": question,
+            "answer": result.answer,
+            "citations": result.citations,
+            "confidence": result.confidence,
+            "usedRelatedMeetings": False,
         }

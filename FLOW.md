@@ -60,6 +60,8 @@ The `ai-enrichment-service` consumes the transcript-ready event.
 Current code behavior:
 
 - chunks transcript content
+- calls `Amazon Bedrock` when `BEDROCK_MODEL_ID` is configured
+- uses deterministic local generation when Bedrock is not configured
 - builds structured meeting intelligence
 - persists:
   - `summaries`
@@ -72,7 +74,6 @@ Current code behavior:
 
 Current limitation:
 
-- real `Amazon Bedrock` inference is not implemented yet
 - embeddings and `OpenSearch` indexing are still planned
 
 ### 7. SNS fans out to consumers

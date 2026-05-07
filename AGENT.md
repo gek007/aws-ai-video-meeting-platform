@@ -31,7 +31,7 @@ Implemented in code:
 Still planned:
 
 - real media conversion engine
-- real `Amazon Bedrock`
+- real `Amazon Bedrock` for AI enrichment is wired
 - real `OpenSearch` indexing
 - real scheduled AWS infrastructure
 - real Transcribe completion event handling
@@ -63,7 +63,7 @@ The platform uses a hybrid `SNS + SQS + Lambda` event-driven model.
 - `Lambda`
   Runs ingestion, orchestration, enrichment, notification, and sync logic.
 - `Bedrock`
-  Planned provider for summarization, extraction, embeddings, and chat answer generation.
+  Provides AI enrichment when configured; embeddings and chat answer generation are still planned.
 - `Aurora PostgreSQL`
   Stores transactional metadata and media lifecycle state.
 - `OpenSearch Serverless`

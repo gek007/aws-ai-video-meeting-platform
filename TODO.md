@@ -10,6 +10,7 @@ Implemented already:
 - SNS publish from AI enrichment
 - `Amazon Transcribe` submission adapter
 - `Amazon SES` email sender adapter
+- `Amazon Bedrock` enrichment adapter
 - integration tests for the queue-driven pipeline baseline
 
 Still pending are the larger runtime integrations and infrastructure pieces listed below.
@@ -96,9 +97,9 @@ Still pending are the larger runtime integrations and infrastructure pieces list
 - [x] Implement transcript chunking strategy
 - [x] Persist transcript chunks for retrieval and citation support
 - [x] Define prompt templates and versioning
-- [ ] Integrate with `Amazon Bedrock` for summary generation
-- [ ] Integrate with `Amazon Bedrock` for action item extraction
-- [ ] Integrate with `Amazon Bedrock` for decision and topic extraction
+- [x] Integrate with `Amazon Bedrock` for summary generation
+- [x] Integrate with `Amazon Bedrock` for action item extraction
+- [x] Integrate with `Amazon Bedrock` for decision and topic extraction
 - [x] Implement structured JSON output validation
 - [x] Persist summaries, topics, decisions, and action items
 - [x] Update `video_items.ai_enrichment_status`
@@ -214,7 +215,7 @@ Still pending are the larger runtime integrations and infrastructure pieces list
 - [x] Add unit tests for idempotency logic baseline
 - [x] Add unit tests for retrieval and citation behavior baseline
 - [x] Add integration tests for queue-driven flows
-- [ ] Add integration tests for Bedrock structured outputs
+- [x] Add integration tests for Bedrock structured outputs
 - [x] Add integration tests for RAG question answering
 - [x] Add integration tests for external connectors baseline
 - [ ] Add end-to-end test for full meeting processing flow with real AWS boundaries
